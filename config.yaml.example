@@ -1,0 +1,62 @@
+# Jira CLI Configuration
+# ========================
+# Defines Jira hosts and sync patterns for the offline-first CLI.
+# Copy this file to config.yaml and customize for your environment.
+
+# Default host used when --host is not specified
+default_host: company
+
+# Host definitions
+# Each host represents a Jira Data Center instance
+hosts:
+
+  # Primary Jira instance
+  company:
+    # Base URL of the Jira instance (no trailing slash)
+    url: https://jira.atlassian.company.com
+    
+    # REST API path (usually /rest/api/2 for Data Center)
+    api: /rest/api/2
+    
+    # Sync patterns - JQL queries that define which tickets to pull
+    # Each pattern is fetched during `jira pull`
+    sync:
+      # Pattern 1: Tickets assigned to current user, updated recently
+      - jql: "assignee = currentUser() AND updated >= -30d"
+        limit: 100  # Optional: max tickets to fetch (default: no limit)
+      
+      # Pattern 2: Specific project with filters
+      - jql: |
+          project = SRE
+          AND status != Closed
+          AND updated >= -14d
+          ORDER BY updated DESC
+        limit: 50
+      
+      # Pattern 3: Tickets you're watching
+      - jql: "watcher = currentUser()"
+
+    # Optional: Default settings for `jira batch` command
+    batch_defaults:
+      project:
+        id: 17500
+        name: SRE
+      labels: []
+      assigned_group: ".SRE - Team"
+      default_issue_type: Task
+      default_story_points: 0
+      link_type: Dependency
+
+  # Secondary Jira instance
+
+  # Instance with no automatic sync (manual pull only)
+  staging:
+    url: https://stage-jira.example.com
+    api: /rest/api/2
+    sync: []  # Empty array = no automatic sync
+
+# Notes:
+# - JQL is passed directly to Jira API (no local parsing)
+# - Multi-line JQL uses YAML's | syntax for readability
+# - Sync patterns are processed in order during `jira pull`
+# - Use `jira pull --host <name>` to pull from a specific host

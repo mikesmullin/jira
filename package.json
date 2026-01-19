@@ -1,0 +1,22 @@
+{
+  "name": "jira-cli",
+  "version": "0.1.0",
+  "description": "Offline-first Jira CLI with local Markdown storage",
+  "author": "Mike Smullin <mike@smullindesign.com>",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "jira": "./src/cli.mjs"
+  },
+  "scripts": {
+    "start": "bun src/cli.mjs",
+    "link": "bun link"
+  },
+  "dependencies": {
+    "js-yaml": "^4.1.0"
+  },
+  "devDependencies": {},
+  "engines": {
+    "bun": ">=1.0.0"
+  }
+}

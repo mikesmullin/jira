@@ -1,0 +1,18 @@
+/tmp/
+PROMPT.md
+node_modules/
+
+# Tokens (sensitive)
+.tokens.yaml
+
+# Config (personal)
+config.yaml
+
+# Storage (local data)
+storage/
+
+# Bun
+bun.lockb
+
+# OS
+.DS_Store

@@ -1,0 +1,34 @@
+# Jira Personal Access Tokens
+# ============================
+# Authentication tokens for each Jira host.
+#
+# SETUP:
+#   1. Copy this file to .tokens.yaml
+#   2. Generate a PAT for each host you need
+#   3. Replace YOUR_PAT_TOKEN_HERE with your actual tokens
+#
+# SECURITY:
+#   - .tokens.yaml is gitignored - NEVER commit it
+#   - PATs should have minimum required permissions
+#   - Rotate tokens periodically
+#
+# GENERATING A PAT:
+#   1. Log into your Jira instance
+#   2. Go to Profile → Personal Access Tokens
+#   3. Click "Create token"
+#   4. Name it (e.g., "jira-cli")
+#   5. Copy the token immediately (shown only once)
+#
+# REQUIRED PERMISSIONS:
+#   - Browse projects
+#   - Create issues (for jira batch)
+#   - Edit issues (for jira apply)
+#   - Add comments (for jira apply)
+#   - Transition issues (for status changes)
+
+hosts:
+  # Main Jira instance
+  company:
+    token: YOUR_PAT_TOKEN_HERE
+
+  # Additional instances (add as needed)

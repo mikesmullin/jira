@@ -1,0 +1,6 @@
+{
+  "files.associations": {
+    "*.yaml.example": "yaml",
+    "*.md.example": "markdown"
+  }
+}

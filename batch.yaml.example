@@ -1,0 +1,132 @@
+# Jira Batch Ticket Creation
+# ===========================
+# YAML schema for bulk ticket creation with `jira batch`.
+# 
+# Usage:
+#   jira batch <file.yaml> --plan   # Preview what would be created
+#   jira batch <file.yaml> --apply  # Create the tickets
+#
+# Run `jira field sync --host <name>` first to cache custom field IDs.
+
+# Epic Configuration (optional)
+# Create a new epic or link tasks to an existing one
+epic:
+  # Option A: Create a new epic
+  name: "Q1 Infrastructure Upgrade"     # Epic name (required for new epic)
+  summary: "Modernize authentication"   # Epic summary (uses name if omitted)
+  description: |
+    Detailed description of the epic.
+    Supports multi-line text.
+  labels: ["q1-project"]                # Epic-specific labels (optional)
+  
+  # Option B: Use an existing epic (mutually exclusive with above)
+  # id: "SRE-12345"
+
+# Common Settings (optional)
+# Defaults applied to all tasks in this file
+common:
+  # Project definition (required if not in host batch_defaults)
+  project:
+    id: 17500                           # Jira project ID (numeric)
+    name: SRE                           # Project key/name
+
+  # Labels applied to all tasks
+  labels:
+    - "my-project"
+    - "q1-2026"
+
+  # Assigned group (custom field, varies by Jira instance)
+  assigned_group: ".SRE - Team"
+
+  # Additional groups (if your Jira supports multiple)
+  additional_groups:
+    - ".SRE - Support"
+
+  # Default issue type when not specified per-task
+  default_issue_type: Task              # Task, Story, Bug, Risk, etc.
+
+  # Default story points when not specified per-task
+  default_story_points: 0
+
+  # Default time estimate
+  default_estimate: "0h"
+
+  # Components applied to all tasks
+  components:
+    - "Backend"
+
+  # Link type for depends_on relationships
+  # Common values: "Dependency", "Blocks", "is blocked by"
+  link_type: Dependency
+
+# Tasks (required)
+# List of tickets to create
+tasks:
+  # Minimal task - only summary is required
+  - summary: "Audit current LDAP configuration"
+    description: "Review existing authentication setup and document findings."
+
+  # Full-featured task with all options
+  - summary: "Design new authentication flow"
+    description: |
+      Design and document the new OAuth2-based authentication flow.
+      
+      Include:
+      - Sequence diagrams
+      - API contracts
+      - Security considerations
+    
+    # Issue type (overrides common.default_issue_type)
+    issue_type: Story
+    
+    # Story points (overrides common.default_story_points)
+    story_points: 5
+    
+    # Time estimate in Jira format
+    original_estimate: "2d"
+    
+    # Additional labels (merged with common.labels)
+    labels:
+      - "design"
+      - "security"
+    
+    # Components (overrides common.components)
+    components:
+      - "Authentication"
+      - "Security"
+    
+    # Acceptance criteria (appended to description)
+    acceptance_criteria:
+      - "Sequence diagram reviewed by team"
+      - "Security team sign-off obtained"
+      - "API contracts documented in Confluence"
+    
+    # Dependencies - creates issue links after all tasks exist
+    links:
+      # Reference another task by its summary
+      - depends_on: "Audit current LDAP configuration"
+      
+      # Or reference an existing Jira ticket by key
+      - depends_on: "SRE-98765"
+
+  # Task with dependency chain
+  - summary: "Implement OAuth2 integration"
+    description: "Implement the authentication flow as designed."
+    story_points: 8
+    issue_type: Task
+    links:
+      - depends_on: "Design new authentication flow"
+
+  # Risk item
+  - summary: "Legacy system compatibility risk"
+    description: "Risk that legacy systems may not support OAuth2."
+    issue_type: Risk
+    labels:
+      - "risk"
+
+# Notes:
+# - Tasks are created in order, then links are established
+# - depends_on resolves by exact summary match or Jira key
+# - acceptance_criteria are formatted as bullet list in description
+# - Field IDs (story points, epic link, etc.) are looked up dynamically
+#   from the field cache - run `jira field sync` first
