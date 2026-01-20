@@ -8,7 +8,7 @@ import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { join } from 'path';
 import yaml from 'js-yaml';
 import { loadConfig, getHostConfig, getCacheDir } from '../lib/config.mjs';
-import { searchAll, getComments } from '../lib/api.mjs';
+import { searchAll, getComments, getChangelog } from '../lib/api.mjs';
 import { saveIssue, ensureStorageDirs } from '../lib/storage.mjs';
 
 const HELP = `
@@ -178,7 +178,16 @@ async function pullFromHost(hostName, config, forceFull) {
       const issues = await searchAll(hostName, jql, searchOptions);
       console.log(`   📋 Found ${issues.length} issue(s)`);
 
+      // Track the max updated timestamp from fetched issues (use Jira's clock, not ours)
+      let maxUpdated = null;
+
       for (const issue of issues) {
+        // Track max updated time from Jira's perspective
+        const issueUpdated = issue.fields?.updated;
+        if (issueUpdated && (!maxUpdated || issueUpdated > maxUpdated)) {
+          maxUpdated = issueUpdated;
+        }
+
         // Fetch comments for this issue
         let comments = [];
         try {
@@ -188,14 +197,25 @@ async function pullFromHost(hostName, config, forceFull) {
           console.log(`   ⚠ Could not fetch comments for ${issue.key}`);
         }
 
-        const result = saveIssue(issue, hostConfig.url, { comments });
+        // Fetch changelog for this issue
+        let changelog = { histories: [] };
+        try {
+          changelog = await getChangelog(hostName, issue.key);
+        } catch (changelogErr) {
+          // Changelog fetch failed, continue without it
+          console.log(`   ⚠ Could not fetch changelog for ${issue.key}`);
+        }
+
+        const result = saveIssue(issue, hostConfig.url, { comments, changelog });
         const commentCount = comments.length > 0 ? ` (${comments.length} comments)` : '';
         console.log(`   ✓ ${issue.key}: ${issue.fields?.summary?.substring(0, 50) || 'No summary'}...${commentCount}`);
         hostPulled++;
       }
 
-      // Update sync state for this pattern
-      syncState.hosts[hostName].patterns[pKey] = pullStartTime;
+      // Update sync state using Jira's max updated timestamp (avoids clock drift issues)
+      // Fall back to local time only if no issues were fetched
+      const syncTimestamp = maxUpdated || pullStartTime;
+      syncState.hosts[hostName].patterns[pKey] = syncTimestamp;
     } catch (error) {
       console.error(`   ❌ Error: ${error.message}`);
     }

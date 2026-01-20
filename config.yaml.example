@@ -6,6 +6,39 @@
 # Default host used when --host is not specified
 default_host: company
 
+# Display settings for `jira list` command
+# Controls how change summaries are formatted
+display:
+  # Labels to show individually with +/- prefix when added/removed
+  # Other label changes are counted generically as "N labels"
+  tracked_labels:
+    - urgent
+    - blocked
+    - needs-review
+    - on-hold
+
+  # Components to show individually with +/- prefix
+  # Other component changes are counted generically as "N components"
+  tracked_components:
+    - Backend
+    - Frontend
+    - Infrastructure
+    - Documentation
+
+  # Fields to call out by name when changed
+  # Key is the display name, value is array of Jira field names that map to it
+  # Other field changes are counted generically as "N fields"
+  tracked_fields:
+    assignee: [assignee]
+    status: [status]
+    priority: [priority]
+    estimate: [timeoriginalestimate, Original Estimate]
+    logged: [timespent, Time Spent]
+    remaining: [timeestimate, Remaining Estimate]
+    target start: [Target start]
+    target end: [Target end]
+    due date: [duedate, Due Date]
+
 # Host definitions
 # Each host represents a Jira Data Center instance
 hosts:

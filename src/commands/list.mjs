@@ -4,6 +4,31 @@
 
 import { parseArgs } from 'util';
 import { listStoredIds } from '../lib/id.mjs';
+import { loadConfig } from '../lib/config.mjs';
+import { dim, cyan, yellow, green, pink } from '../lib/colors.mjs';
+
+// Additional 24-bit colors for the list display
+const STATUS_COLORS = {
+  'in progress': '\x1b[38;2;102;178;255m',  // Blue
+  'new': '\x1b[38;2;123;237;159m',           // Green
+  'open': '\x1b[38;2;123;237;159m',          // Green
+  'closed': '\x1b[38;2;140;140;140m',        // Gray
+  'done': '\x1b[38;2;140;140;140m',          // Gray
+  'resolved': '\x1b[38;2;140;140;140m',      // Gray
+  'hold': '\x1b[38;2;255;209;102m',          // Yellow
+  'blocked': '\x1b[38;2;255;121;121m',       // Red/Pink
+};
+const RESET = '\x1b[0m';
+
+// Load tracked labels/components from config (with defaults)
+function getDisplayConfig() {
+  try {
+    const config = loadConfig();
+    return config.display || {};
+  } catch {
+    return {};
+  }
+}
 
 const HELP = `
 jira list - List local tickets that have changed since last read
@@ -94,14 +119,16 @@ export async function runList(args) {
     return;
   }
 
-  console.log(`Showing ${displayed.length} of ${tickets.length} tickets:\n`);
+  const label = values.all ? 'tickets in cache' : 'unread tickets';
+  console.log(`📖 ${tickets.length} ${label} (showing ${displayed.length}):\n`);
 
+  let index = 1;
   for (const ticket of displayed) {
-    printTicketLine(ticket);
+    printTicketLine(ticket, index++);
   }
 
   if (remaining > 0) {
-    console.log(`\n... and ${remaining} more`);
+    console.log(dim(`\n   ... and ${remaining} more`));
   }
 }
 
@@ -121,63 +148,129 @@ function isUnreadOrChanged(ticket) {
   return false;
 }
 
-function printTicketLine(ticket) {
-  const shortId = ticket.shortId || ticket.id?.substring(0, 6) || '??????';
-  const key = ticket.key || 'UNKNOWN';
-  const status = ticket.statusName || ticket.status?.name || 'Unknown';
-  const updated = ticket.updated?.split('T')[0] || '';
-  const summary = ticket.summary || 'No summary';
+/**
+ * Colorize status text based on status name
+ */
+function colorizeStatus(status) {
+  const statusLower = status.toLowerCase();
+  const color = STATUS_COLORS[statusLower] || '';
+  return color ? `${color}${status}${RESET}` : status;
+}
 
-  // Determine if changed
-  const offline = ticket.offline || {};
-  const isNew = !offline.last_read;
-  const isChanged = !isNew && ticket.updated &&
-    new Date(ticket.updated) > new Date(offline.last_read);
+/**
+ * Format the change summary for display
+ * Returns something like "(+no-estimate, assignee, status, 2 labels, 1 comment)" or empty string
+ */
+function formatChangeSummary(changes) {
+  if (!changes) return '';
 
-  const marker = isNew ? '★' : isChanged ? '◆' : ' ';
+  const displayConfig = getDisplayConfig();
+  const trackedLabels = displayConfig.tracked_labels || [];
+  const trackedComponents = displayConfig.tracked_components || [];
 
-  console.log(`${marker} ${shortId} / ${key} / ${updated} / ${status}`);
-  console.log(`    ${summary.substring(0, 70)}${summary.length > 70 ? '...' : ''}`);
+  const parts = [];
 
-  // Show changed fields if applicable
-  if (isChanged && offline.previous) {
-    const changes = detectChanges(ticket, offline.previous);
-    if (changes.length > 0) {
-      console.log(`    [CHANGED: ${changes.join(', ')}]`);
+  // Title and description first (cyan - important metadata)
+  if (changes.title) {
+    parts.push(cyan('title'));
+  }
+  if (changes.description) {
+    parts.push(cyan('description'));
+  }
+
+  // Tracked labels with +/- prefix
+  let untrackedLabelAdds = 0;
+  let untrackedLabelRemoves = 0;
+  
+  for (const label of changes.labelsAdded || []) {
+    if (trackedLabels.includes(label)) {
+      parts.push(green(`+${label}`));
+    } else {
+      untrackedLabelAdds++;
+    }
+  }
+  for (const label of changes.labelsRemoved || []) {
+    if (trackedLabels.includes(label)) {
+      parts.push(pink(`-${label}`));
+    } else {
+      untrackedLabelRemoves++;
     }
   }
 
-  console.log('');
+  // Tracked components with +/- prefix
+  let untrackedCompAdds = 0;
+  let untrackedCompRemoves = 0;
+  
+  for (const comp of changes.componentsAdded || []) {
+    if (trackedComponents.includes(comp)) {
+      parts.push(green(`+${comp}`));
+    } else {
+      untrackedCompAdds++;
+    }
+  }
+  for (const comp of changes.componentsRemoved || []) {
+    if (trackedComponents.includes(comp)) {
+      parts.push(pink(`-${comp}`));
+    } else {
+      untrackedCompRemoves++;
+    }
+  }
+
+  // Named fields (cyan)
+  for (const field of changes.namedFields || []) {
+    parts.push(cyan(field));
+  }
+
+  // Generic counts for untracked items (dim)
+  const totalLabelChanges = untrackedLabelAdds + untrackedLabelRemoves;
+  if (totalLabelChanges > 0) {
+    parts.push(dim(`${totalLabelChanges} label${totalLabelChanges > 1 ? 's' : ''}`));
+  }
+
+  const totalCompChanges = untrackedCompAdds + untrackedCompRemoves;
+  if (totalCompChanges > 0) {
+    parts.push(dim(`${totalCompChanges} component${totalCompChanges > 1 ? 's' : ''}`));
+  }
+
+  if (changes.otherFields > 0) {
+    parts.push(dim(`${changes.otherFields} field${changes.otherFields > 1 ? 's' : ''}`));
+  }
+
+  // Comments last (cyan - important)
+  if (changes.comments > 0) {
+    parts.push(cyan(`${changes.comments} comment${changes.comments > 1 ? 's' : ''}`));
+  }
+
+  if (parts.length === 0) return '';
+
+  return yellow(`(${parts.join(', ')})`);
 }
 
-function detectChanges(current, previous) {
-  const changes = [];
+function printTicketLine(ticket, index) {
+  const shortId = ticket.shortId || ticket.id?.substring(0, 6) || '??????';
+  const key = ticket.key || 'UNKNOWN';
+  const status = ticket.statusName || ticket.status?.name || 'Unknown';
+  const priority = ticket.priority?.name || ticket.priority || '-';
+  const summary = ticket.summary || 'No summary';
+  const changes = ticket.changesSinceRead;
 
-  // Handle both object and string forms of status
-  const currentStatus = current.status?.name || current.statusName;
-  const prevStatus = previous.status?.name || previous.status;
-  if (currentStatus !== prevStatus) {
-    changes.push('status');
-  }
+  // Truncate summary to fit nicely
+  const maxSummaryLen = 45;
+  const displaySummary = summary.length > maxSummaryLen 
+    ? summary.substring(0, maxSummaryLen) + '…' 
+    : summary;
 
-  // Handle assignee comparison
-  const currentAssignee = current.assignee?.displayName;
-  const prevAssignee = previous.assignee?.displayName || previous.assignee;
-  if (currentAssignee !== prevAssignee) {
-    changes.push('assignee');
-  }
+  // Format change summary
+  const changeSummary = formatChangeSummary(changes);
 
-  // Handle priority comparison
-  const currentPriority = current.priority?.name;
-  const prevPriority = previous.priority?.name || previous.priority;
-  if (currentPriority !== prevPriority) {
-    changes.push('priority');
-  }
+  // Build the line with tab-separated columns
+  // Format: <num>.\t<sha1>\t<ticket_id>\t<priority>\t<status>\t<title>\t<changes>
+  const numCol = dim(`${index.toString().padStart(3)}.`);
+  const shaCol = cyan(shortId);
+  const keyCol = key;
+  const prioCol = dim(`P${priority}`);
+  const statusCol = colorizeStatus(status);
+  const summaryCol = displaySummary;
 
-  // Handle summary comparison
-  if (current.summary !== previous.summary) {
-    changes.push('summary');
-  }
-
-  return changes;
+  console.log(`  ${numCol}\t${shaCol}\t${keyCol}\t${prioCol}\t${statusCol}\t${summaryCol}\t${changeSummary}`);
 }

@@ -143,12 +143,16 @@ export function listStoredIds() {
       key: frontmatter?.key,
       host: frontmatter?.host,
       summary: frontmatter?.summary,
+      description: frontmatter?.description,
       status: frontmatter?.status,  // Keep full object for change detection
       statusName: frontmatter?.status?.name,  // Also include name for display
       assignee: frontmatter?.assignee,
       priority: frontmatter?.priority,
+      labels: frontmatter?.labels,
       updated: frontmatter?.updated,
       offline: frontmatter?.offline,
+      _comments: frontmatter?._comments,
+      changesSinceRead: frontmatter?.offline?.changes_since_read,
     };
   });
 }

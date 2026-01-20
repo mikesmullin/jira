@@ -3,9 +3,10 @@
  */
 
 import { parseArgs } from 'util';
-import { readdirSync, unlinkSync } from 'fs';
+import { readdirSync, unlinkSync, writeFileSync } from 'fs';
 import { join } from 'path';
-import { getStorageDir } from '../lib/config.mjs';
+import yaml from 'js-yaml';
+import { getStorageDir, getCacheDir } from '../lib/config.mjs';
 import { green, pink, dim } from '../lib/colors.mjs';
 
 const HELP = `
@@ -51,12 +52,20 @@ export async function runClean(args) {
       !f.endsWith('.example')
     );
   } catch {
-    console.log(dim('Storage directory not found or empty.'));
-    return;
+    files = [];
+  }
+
+  // Reset sync state (pull markers) so next pull fetches everything fresh
+  const syncStatePath = join(getCacheDir(), 'sync-state.yaml');
+  try {
+    writeFileSync(syncStatePath, yaml.dump({ hosts: {} }, { lineWidth: -1 }), 'utf8');
+  } catch (error) {
+    console.error(pink(`✗ Failed to reset sync state: ${error.message}`));
   }
 
   if (files.length === 0) {
     console.log(dim('No ticket files to clean.'));
+    console.log(dim('Sync state reset — next pull will fetch everything fresh.'));
     return;
   }
 
@@ -71,4 +80,5 @@ export async function runClean(args) {
   }
 
   console.log(green(`✓ Cleaned ${removed} ticket file(s).`));
+  console.log(dim('  Sync state reset — next pull will fetch everything fresh.'));
 }
