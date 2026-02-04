@@ -6,7 +6,7 @@ import { parseArgs } from 'util';
 import { existsSync, writeFileSync, readFileSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import yaml from 'js-yaml';
-import { getFields } from '../lib/api.mjs';
+import { getFields, getFieldOptions, searchInsightObjects } from '../lib/api.mjs';
 import { getCacheDir, getDefaultHost } from '../lib/config.mjs';
 
 const HELP = `
@@ -20,9 +20,13 @@ SUBCOMMANDS:
   list              List cached custom fields
   get <id>          Get field details by ID
   find <name>       Search fields by name
+  values <id>       Get allowed values for a field (requires --project and --type)
+  insight <query>   Search Insight/Assets objects by name (IQL search)
 
 OPTIONS:
   --host <name>     Jira host (default: from config)
+  --project <key>   Project key (for values lookup)
+  --type <name>     Issue type name (for values lookup, default: Task)
   -h, --help        Show this help message
 
 EXAMPLES:
@@ -30,6 +34,8 @@ EXAMPLES:
   jira field list
   jira field find "assigned group"
   jira field get customfield_10314
+  jira field values customfield_10325 --project SRE --type Task
+  jira field insight "StarCraft"      # Search Insight objects
 `;
 
 export async function runField(args) {
@@ -37,6 +43,8 @@ export async function runField(args) {
     args,
     options: {
       host: { type: 'string', short: 'H' },
+      project: { type: 'string', short: 'p' },
+      type: { type: 'string', short: 't' },
       help: { type: 'boolean', short: 'h' },
     },
     allowPositionals: true,
@@ -62,6 +70,12 @@ export async function runField(args) {
       break;
     case 'find':
       findFields(hostName, positionals.slice(1).join(' '));
+      break;
+    case 'values':
+      await getFieldValues(hostName, positionals[1], values.project, values.type);
+      break;
+    case 'insight':
+      await searchInsightValues(hostName, positionals.slice(1).join(' '));
       break;
     default:
       console.error(`Unknown subcommand: ${subcommand}`);
@@ -228,5 +242,98 @@ function findFields(hostName, query) {
       console.log(`  JQL: ${field.clauseNames.join(', ')}`);
     }
     console.log('');
+  }
+}
+
+async function getFieldValues(hostName, fieldId, projectKey, issueType) {
+  if (!fieldId) {
+    console.error('Usage: jira field values <id> --project <key> [--type <name>]');
+    return;
+  }
+
+  if (!projectKey) {
+    console.error('Error: --project <key> is required');
+    console.error('Example: jira field values customfield_10325 --project SRE');
+    return;
+  }
+
+  const type = issueType || 'Task';
+
+  console.log(`Fetching allowed values for ${fieldId} in ${projectKey}/${type}...\n`);
+
+  try {
+    const options = await getFieldOptions(hostName, projectKey, type, fieldId);
+
+    if (options.length === 0) {
+      console.log('No allowed values found via standard API.');
+      console.log('\nThis may be an Insight/Assets field. Use the insight subcommand to search:');
+      console.log('  jira field insight "<search term>"');
+      console.log('\nExample:');
+      console.log('  jira field insight "StarCraft"');
+      return;
+    }
+
+    console.log(`Allowed values (${options.length}):\n`);
+
+    for (const opt of options) {
+      // Handle different option formats
+      if (opt.value) {
+        console.log(`  value: "${opt.value}"${opt.id ? ` (id: ${opt.id})` : ''}`);
+      } else if (opt.name) {
+        console.log(`  name: "${opt.name}"${opt.key ? ` (key: ${opt.key})` : ''}`);
+      } else {
+        console.log(`  ${JSON.stringify(opt)}`);
+      }
+    }
+
+    console.log('\nUsage example:');
+    if (options[0]?.value) {
+      console.log(`  jira edit <id> ${fieldId} '[{"value":"${options[0].value}"}]'`);
+    } else if (options[0]?.name) {
+      console.log(`  jira edit <id> ${fieldId} '[{"name":"${options[0].name}"}]'`);
+    }
+  } catch (error) {
+    console.error(`Error fetching field values: ${error.message}`);
+  }
+}
+
+/**
+ * Search Insight/Assets objects by name using IQL
+ */
+async function searchInsightValues(hostName, query) {
+  if (!query) {
+    console.error('Usage: jira field insight <search term>');
+    console.error('Example: jira field insight "StarCraft"');
+    return;
+  }
+
+  console.log(`Searching Insight objects for "${query}"...\n`);
+
+  try {
+    // Use IQL Name search
+    const iql = `Name like "${query}"`;
+    const objects = await searchInsightObjects(hostName, iql, 50);
+
+    if (objects.length === 0) {
+      console.log('No Insight objects found matching that query.');
+      console.log('\nTry a different search term or check the Jira UI.');
+      return;
+    }
+
+    console.log(`Found ${objects.length} Insight objects:\n`);
+
+    for (const obj of objects) {
+      console.log(`  ${obj.key}: ${obj.label}`);
+      if (obj.objectType) {
+        console.log(`    type: ${obj.objectType}`);
+      }
+    }
+
+    console.log('\nUsage example (for Insight/Assets fields):');
+    console.log(`  jira edit <id> <fieldId> '[{"key":"${objects[0].key}"}]'`);
+    console.log('\nOr by ID:');
+    console.log(`  jira edit <id> <fieldId> '[{"id":${objects[0].id}}]'`);
+  } catch (error) {
+    console.error(`Error searching Insight objects: ${error.message}`);
   }
 }

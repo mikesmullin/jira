@@ -8,17 +8,24 @@ import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { join } from 'path';
 import yaml from 'js-yaml';
 import { loadConfig, getHostConfig, getCacheDir } from '../lib/config.mjs';
-import { searchAll, getComments, getChangelog } from '../lib/api.mjs';
+import { searchAll, getComments, getChangelog, getIssue } from '../lib/api.mjs';
 import { saveIssue, ensureStorageDirs } from '../lib/storage.mjs';
+import { resolveId } from '../lib/id.mjs';
 
 const HELP = `
 jira pull - Fetch tickets from Jira to local storage
 
 USAGE:
   jira pull [--host <name>] [--full]
+  jira pull [id...] [--host <name>]
+
+ARGUMENTS:
+  [id...]           Optional ticket IDs to pull (Jira keys like SRE-12345)
+                    When specified, pulls only these tickets instead of sync patterns
 
 OPTIONS:
-  --host <name>     Pull from specific host (default: all configured)
+  --host <name>     Pull from specific host (required when pulling by ID
+                    unless tickets already exist locally)
   --full            Ignore last_sync, pull everything fresh
   -h, --help        Show this help message
 
@@ -32,9 +39,12 @@ BEHAVIOR:
   - Pending changes are never lost
 
 EXAMPLES:
-  jira pull                    # Pull from all hosts (incremental)
-  jira pull --host company    # Pull only from Company Jira
-  jira pull --full             # Force full refresh
+  jira pull                       # Pull from all hosts (incremental)
+  jira pull --host company        # Pull only from Company Jira
+  jira pull --full                # Force full refresh
+  jira pull SRE-123               # Pull a specific ticket
+  jira pull SRE-123 SRE-456       # Pull multiple specific tickets
+  jira pull SRE-123 --host work   # Pull from specific host
 `;
 
 /**
@@ -92,6 +102,13 @@ export async function runPull(args) {
 
   ensureStorageDirs();
 
+  // If positional arguments provided, pull specific tickets
+  if (positionals.length > 0) {
+    const pulled = await pullSpecificTickets(positionals, values.host);
+    console.log(`\n✓ Pulled ${pulled} ticket(s)`);
+    return;
+  }
+
   const config = loadConfig();
   const hostsToSync = values.host
     ? [values.host]
@@ -111,6 +128,121 @@ export async function runPull(args) {
   }
 
   console.log(`\n✓ Pulled ${totalPulled} ticket(s) total`);
+}
+
+/**
+ * Pull specific tickets by ID (Jira key, short ID, or full ID)
+ */
+async function pullSpecificTickets(ids, hostName) {
+  const config = loadConfig();
+  let pulled = 0;
+
+  console.log(`\n📥 Pulling ${ids.length} specific ticket(s)...`);
+
+  for (const id of ids) {
+    try {
+      const result = await pullSingleTicket(id, hostName, config);
+      if (result) {
+        pulled++;
+      }
+    } catch (error) {
+      console.error(`   ❌ ${id}: ${error.message}`);
+    }
+  }
+
+  return pulled;
+}
+
+/**
+ * Pull a single ticket by ID
+ * Determines host from: explicit --host, existing local ticket, or default host
+ */
+async function pullSingleTicket(id, explicitHost, config) {
+  // Check if input looks like a Jira key (e.g., SRE-12345)
+  const isJiraKey = /^[A-Z]+-\d+$/i.test(id);
+  const ticketKey = isJiraKey ? id.toUpperCase() : null;
+
+  let targetHost = explicitHost;
+  let resolvedKey = ticketKey;
+
+  // If not a Jira key, try to resolve from local storage
+  if (!isJiraKey) {
+    try {
+      const resolved = resolveId(id);
+      resolvedKey = resolved.key;
+      // Extract host name from host URL
+      if (!targetHost && resolved.host) {
+        targetHost = findHostByUrl(resolved.host, config);
+      }
+    } catch {
+      throw new Error(
+        `Cannot resolve ID "${id}" - use Jira key format (e.g., SRE-123) for new tickets`
+      );
+    }
+  }
+
+  // Determine which host to use
+  if (!targetHost) {
+    // Try to find host from existing local ticket
+    if (!isJiraKey) {
+      throw new Error(`Could not determine host for "${id}" - use --host flag`);
+    }
+    // Use default host if available
+    if (config.default_host) {
+      targetHost = config.default_host;
+    } else {
+      // Use first available host
+      const hosts = Object.keys(config.hosts);
+      if (hosts.length === 1) {
+        targetHost = hosts[0];
+      } else {
+        throw new Error(`Multiple hosts configured - use --host flag to specify which one`);
+      }
+    }
+  }
+
+  const hostConfig = getHostConfig(targetHost);
+
+  // Fetch the issue from Jira
+  const issue = await getIssue(targetHost, resolvedKey);
+
+  // Fetch comments
+  let comments = [];
+  try {
+    comments = await getComments(targetHost, resolvedKey);
+  } catch {
+    console.log(`   ⚠ Could not fetch comments for ${resolvedKey}`);
+  }
+
+  // Fetch changelog
+  let changelog = { histories: [] };
+  try {
+    changelog = await getChangelog(targetHost, resolvedKey);
+  } catch {
+    console.log(`   ⚠ Could not fetch changelog for ${resolvedKey}`);
+  }
+
+  // Save to local storage
+  saveIssue(issue, hostConfig.url, { comments, changelog });
+
+  const commentCount = comments.length > 0 ? ` (${comments.length} comments)` : '';
+  console.log(
+    `   ✓ ${issue.key}: ${issue.fields?.summary?.substring(0, 50) || 'No summary'}...${commentCount}`
+  );
+
+  return true;
+}
+
+/**
+ * Find host name by URL
+ */
+function findHostByUrl(url, config) {
+  for (const [name, hostConfig] of Object.entries(config.hosts)) {
+    if (hostConfig.url === url) {
+      return name;
+    }
+  }
+  return null;
 }
 
 async function pullFromHost(hostName, config, forceFull) {

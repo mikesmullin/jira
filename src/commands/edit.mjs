@@ -30,6 +30,17 @@ EXAMPLES:
   jira edit abc123 labels -wontfix
 `;
 
+/**
+ * Try to parse a value as JSON, return original if not valid JSON
+ */
+function parseValue(value) {
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
+  }
+}
+
 export async function runEdit(args) {
   const { values, positionals } = parseArgs({
     args,
@@ -58,7 +69,9 @@ export async function runEdit(args) {
   if (field === 'labels') {
     handleLabelEdit(resolved.filePath, ticket, value);
   } else {
-    queueEdit(resolved.filePath, field, value);
+    // Parse JSON for custom fields (supports arrays for multiselect fields)
+    const parsedValue = field.startsWith('customfield_') ? parseValue(value) : value;
+    queueEdit(resolved.filePath, field, parsedValue);
   }
 
   console.log(`${green('✓')} Queued edit: ${cyan(resolved.key || resolved.id.substring(0, 6))}`);

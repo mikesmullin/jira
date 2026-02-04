@@ -206,6 +206,111 @@ export async function getFields(hostName) {
 }
 
 /**
+ * Make an authenticated request to Insight REST API (for Assets/Insight fields)
+ * Uses /rest/insight/1.0 base path instead of /rest/api/2
+ */
+async function insightRequest(hostName, method, endpoint) {
+  const host = getHostConfig(hostName);
+  const url = `${host.url}/rest/insight/1.0${endpoint}`;
+
+  const headers = {
+    'Authorization': `Bearer ${host.token}`,
+    'Content-Type': 'application/json',
+    'Accept': 'application/json',
+  };
+
+  const response = await fetch(url, { method, headers });
+
+  if (!response.ok) {
+    return null; // Insight API may not be available
+  }
+
+  return response.json();
+}
+
+/**
+ * Search Insight objects using IQL (Insight Query Language)
+ * @param {string} hostName - Jira host name
+ * @param {string} iql - IQL query (e.g., 'Name like "StarCraft"')
+ * @param {number} maxResults - Maximum results to return
+ * @returns {Array} Array of matching objects with objectKey and label
+ */
+export async function searchInsightObjects(hostName, iql, maxResults = 50) {
+  const encoded = encodeURIComponent(iql);
+  const result = await insightRequest(
+    hostName,
+    'GET',
+    `/iql/objects?iql=${encoded}&resultPerPage=${maxResults}`
+  );
+  
+  if (!result?.objectEntries) {
+    return [];
+  }
+  
+  return result.objectEntries.map(obj => ({
+    key: obj.objectKey,
+    label: obj.label,
+    id: obj.id,
+    objectType: obj.objectType?.name
+  }));
+}
+
+/**
+ * Get Insight object schemas (top-level categories like CMDB)
+ */
+export async function getInsightSchemas(hostName) {
+  const result = await insightRequest(hostName, 'GET', '/objectschema/list');
+  return result?.objectschemas || [];
+}
+
+/**
+ * Get object types within a schema (e.g., Service, Hardware, Host)
+ */
+export async function getInsightObjectTypes(hostName, schemaId) {
+  const result = await insightRequest(hostName, 'GET', `/objectschema/${schemaId}/objecttypes/flat`);
+  return Array.isArray(result) ? result : [];
+}
+
+/**
+ * Get allowed values for a field using createmeta v2 API
+ * Works for standard select/multiselect fields
+ */
+export async function getFieldOptions(hostName, projectKey, issueType, fieldId) {
+  // First get issue types to find the type ID
+  const typesResult = await get(hostName, `/issue/createmeta/${projectKey}/issuetypes`);
+  const issueTypeObj = typesResult.values?.find(t => 
+    t.name.toLowerCase() === issueType.toLowerCase()
+  );
+  
+  if (!issueTypeObj) {
+    const available = typesResult.values?.map(t => t.name).join(', ');
+    throw new Error(`Issue type "${issueType}" not found. Available: ${available}`);
+  }
+  
+  // Get fields for this issue type
+  const fieldsResult = await get(hostName, `/issue/createmeta/${projectKey}/issuetypes/${issueTypeObj.id}`);
+  
+  // Find our field (may need to paginate for large field sets)
+  let field = fieldsResult.values?.find(f => f.fieldId === fieldId);
+  
+  // If not found in first page and there are more, try to get all
+  if (!field && fieldsResult.total > fieldsResult.values?.length) {
+    // Fetch all fields
+    let startAt = fieldsResult.values?.length || 0;
+    while (startAt < fieldsResult.total) {
+      const moreFields = await get(hostName, 
+        `/issue/createmeta/${projectKey}/issuetypes/${issueTypeObj.id}?startAt=${startAt}`
+      );
+      field = moreFields.values?.find(f => f.fieldId === fieldId);
+      if (field) break;
+      startAt += moreFields.values?.length || 50;
+    }
+  }
+  
+  return field?.allowedValues || [];
+}
+
+/**
  * Get all issue link types
  */
 export async function getLinkTypes(hostName) {

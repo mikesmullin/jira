@@ -30,7 +30,7 @@ export function ensureStorageDirs() {
 export function issueToStorage(issue, hostUrl) {
   const fields = issue.fields || {};
 
-  return {
+  const storage = {
     key: issue.key,
     id: issue.id,
     host: hostUrl,
@@ -48,6 +48,73 @@ export function issueToStorage(issue, hostUrl) {
     description: fields.description,
     webLink: `${hostUrl}/browse/${issue.key}`,
   };
+
+  // Extract custom fields (customfield_* keys with non-null values)
+  const customFields = extractCustomFields(fields);
+  if (Object.keys(customFields).length > 0) {
+    storage.custom_fields = customFields;
+  }
+
+  return storage;
+}
+
+/**
+ * Extract and format custom fields from Jira fields object
+ * Filters out null/empty values and formats complex types
+ */
+function extractCustomFields(fields) {
+  const result = {};
+
+  for (const [key, value] of Object.entries(fields)) {
+    // Only process customfield_* keys with non-null values
+    if (!key.startsWith('customfield_') || value === null || value === undefined) {
+      continue;
+    }
+
+    // Skip empty arrays
+    if (Array.isArray(value) && value.length === 0) {
+      continue;
+    }
+
+    // Store with field ID as key (can be resolved to name later via field cache)
+    result[key] = formatCustomFieldForStorage(value);
+  }
+
+  return result;
+}
+
+/**
+ * Format a custom field value for storage
+ * Normalizes complex Jira types to simpler structures
+ */
+function formatCustomFieldForStorage(value) {
+  // Handle arrays (multi-select, sprint, etc.)
+  if (Array.isArray(value)) {
+    return value.map((item) => formatCustomFieldForStorage(item));
+  }
+
+  // Handle objects (user, group, option, etc.)
+  if (value && typeof value === 'object') {
+    // Common patterns in Jira field values
+    if (value.displayName) return { displayName: value.displayName, key: value.key };
+    if (value.name) return { name: value.name, id: value.id };
+    if (value.value) return { value: value.value, id: value.id };
+    // Sprint objects have special format
+    if (value.id && value.state && value.name) {
+      return { id: value.id, name: value.name, state: value.state };
+    }
+    // Fallback: keep the whole object but remove URLs and avatars
+    const cleaned = {};
+    for (const [k, v] of Object.entries(value)) {
+      if (!k.includes('Url') && k !== 'avatarUrls' && k !== 'self') {
+        cleaned[k] = v;
+      }
+    }
+    return Object.keys(cleaned).length > 0 ? cleaned : value;
+  }
+
+  // Primitives: return as-is
+  return value;
 }
 
 /**

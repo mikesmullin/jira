@@ -157,7 +157,14 @@ function getFieldValue(ticket, field) {
 
 function formatValue(value) {
   if (Array.isArray(value)) {
+    // Handle array of objects (e.g., multiselect fields)
+    if (value.length > 0 && typeof value[0] === 'object') {
+      return JSON.stringify(value);
+    }
     return value.join(', ');
+  }
+  if (typeof value === 'object' && value !== null) {
+    return JSON.stringify(value);
   }
   return String(value);
 }
