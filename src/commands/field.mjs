@@ -24,10 +24,11 @@ SUBCOMMANDS:
   insight <query>   Search Insight/Assets objects by name (IQL search)
 
 OPTIONS:
-  --host <name>     Jira host (default: from config)
-  --project <key>   Project key (for values lookup)
-  --type <name>     Issue type name (for values lookup, default: Task)
-  -h, --help        Show this help message
+  --host <name>       Jira host (default: from config)
+  --project <key>     Project key (for values lookup)
+  --type <name>       Issue type name (for values lookup, default: Task)
+  --object-type <t>   Filter insight search by object type (e.g., Service)
+  -h, --help          Show this help message
 
 EXAMPLES:
   jira field sync --host company
@@ -35,7 +36,8 @@ EXAMPLES:
   jira field find "assigned group"
   jira field get customfield_10314
   jira field values customfield_10325 --project SRE --type Task
-  jira field insight "StarCraft"      # Search Insight objects
+  jira field insight "StarCraft"                    # Search all Insight objects
+  jira field insight "Heroes" --object-type Service # Search only Services
 `;
 
 export async function runField(args) {
@@ -45,6 +47,7 @@ export async function runField(args) {
       host: { type: 'string', short: 'H' },
       project: { type: 'string', short: 'p' },
       type: { type: 'string', short: 't' },
+      'object-type': { type: 'string', short: 'o' },
       help: { type: 'boolean', short: 'h' },
     },
     allowPositionals: true,
@@ -75,7 +78,7 @@ export async function runField(args) {
       await getFieldValues(hostName, positionals[1], values.project, values.type);
       break;
     case 'insight':
-      await searchInsightValues(hostName, positionals.slice(1).join(' '));
+      await searchInsightValues(hostName, positionals.slice(1).join(' '), values['object-type']);
       break;
     default:
       console.error(`Unknown subcommand: ${subcommand}`);
@@ -300,18 +303,23 @@ async function getFieldValues(hostName, fieldId, projectKey, issueType) {
 /**
  * Search Insight/Assets objects by name using IQL
  */
-async function searchInsightValues(hostName, query) {
+async function searchInsightValues(hostName, query, objectType) {
   if (!query) {
-    console.error('Usage: jira field insight <search term>');
+    console.error('Usage: jira field insight <search term> [--object-type <type>]');
     console.error('Example: jira field insight "StarCraft"');
+    console.error('Example: jira field insight "Heroes" --object-type Service');
     return;
   }
 
-  console.log(`Searching Insight objects for "${query}"...\n`);
+  const typeFilter = objectType ? ` (type: ${objectType})` : '';
+  console.log(`Searching Insight objects for "${query}"${typeFilter}...\n`);
 
   try {
-    // Use IQL Name search
-    const iql = `Name like "${query}"`;
+    // Build IQL query with optional object type filter
+    let iql = `Name like "${query}"`;
+    if (objectType) {
+      iql = `objectType = "${objectType}" AND ${iql}`;
+    }
     const objects = await searchInsightObjects(hostName, iql, 50);
 
     if (objects.length === 0) {
