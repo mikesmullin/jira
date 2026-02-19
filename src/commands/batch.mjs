@@ -4,9 +4,10 @@
  */
 
 import { parseArgs } from 'util';
-import { readFileSync, existsSync } from 'fs';
+import { readFileSync, existsSync, readdirSync } from 'fs';
+import { resolve, dirname, basename as pathBasename } from 'path';
 import yaml from 'js-yaml';
-import { createIssue, getIssue, updateIssue, getLinkTypes, getTransitions, doTransition } from '../lib/api.mjs';
+import { createIssue, getIssue, updateIssue, getLinkTypes, getTransitions, doTransition, addAttachment } from '../lib/api.mjs';
 import { getHostConfig, loadConfig, getDefaultHost } from '../lib/config.mjs';
 import { saveIssue } from '../lib/storage.mjs';
 import { getFieldId, getCommonFieldIds, hasFieldCache } from '../lib/fields.mjs';
@@ -57,6 +58,10 @@ YAML SCHEMA:
       acceptance_criteria:
         - "Criterion 1"
         - "Criterion 2"
+      assignee: "jdoe@company.com" # Assignee (username or email)
+      attachments:              # Files to attach after creation
+        - /path/to/screenshot.png
+        - ./relative/to/yaml/file.pdf
       links:
         - depends_on: "Other task summary"
         - depends_on: "SRE-12345"  # Existing ticket key
@@ -137,9 +142,9 @@ export async function runBatch(args) {
   }
 
   if (values.plan) {
-    await planBatch(batch, common, hostName, hostConfig, fieldIds);
+    await planBatch(batch, common, hostName, hostConfig, fieldIds, filePath);
   } else {
-    await applyBatch(batch, common, hostName, hostConfig, fieldIds);
+    await applyBatch(batch, common, hostName, hostConfig, fieldIds, filePath);
   }
 }
 
@@ -168,7 +173,7 @@ function mergeCommon(config, hostConfig, batchCommon, externalConfig = {}) {
 /**
  * Preview what would be created (dry-run)
  */
-async function planBatch(batch, common, hostName, hostConfig, fieldIds) {
+async function planBatch(batch, common, hostName, hostConfig, fieldIds, batchFilePath) {
   console.log(`\n📋 Batch Plan for ${hostName}\n`);
   console.log('─'.repeat(60));
 
@@ -202,9 +207,18 @@ async function planBatch(batch, common, hostName, hostConfig, fieldIds) {
       console.log(`     ${desc}${task.description.length > 60 ? '...' : ''}`);
     }
 
+    if (task.assignee) console.log(`     Assignee: ${task.assignee}`);
     if (storyPoints) console.log(`     Story Points: ${storyPoints}`);
     if (task.original_estimate) console.log(`     Estimate: ${task.original_estimate}`);
     if (task.labels?.length) console.log(`     Labels: ${task.labels.join(', ')}`);
+
+    if (task.attachments?.length) {
+      for (const att of task.attachments) {
+        const absPath = resolveAttachmentPath(att, batchFilePath);
+        const fileExists = existsSync(absPath);
+        console.log(`     📎 ${att}${fileExists ? '' : ' ⚠ FILE NOT FOUND'}`);
+      }
+    }
 
     if (task.links?.length) {
       for (const link of task.links) {
@@ -228,7 +242,8 @@ async function planBatch(batch, common, hostName, hostConfig, fieldIds) {
 /**
  * Actually create the tickets in Jira
  */
-async function applyBatch(batch, common, hostName, hostConfig, fieldIds) {
+async function applyBatch(batch, common, hostName, hostConfig, fieldIds, batchFilePath) {
+  const filePath = batchFilePath; // alias for resolveAttachmentPath calls
   console.log(`\n🚀 Creating tickets in ${hostName}...\n`);
 
   const createdTasks = new Map(); // summary -> issueKey for linking
@@ -284,7 +299,34 @@ async function applyBatch(batch, common, hostName, hostConfig, fieldIds) {
     }
   }
 
-  // Step 3: Create links (dependencies)
+  // Step 3: Upload attachments
+  let attachmentCount = 0;
+  for (const task of batch.tasks) {
+    if (!task.attachments?.length) continue;
+
+    const issueKey = createdTasks.get(task.summary);
+    if (!issueKey) continue;
+
+    for (const att of task.attachments) {
+      const absPath = resolveAttachmentPath(att, filePath);
+      if (!existsSync(absPath)) {
+        console.error(`  ⚠ Attachment not found: ${absPath}`);
+        continue;
+      }
+      try {
+        await addAttachment(hostName, issueKey, absPath);
+        console.log(`  📎 Attached to ${issueKey}: ${att}`);
+        attachmentCount++;
+      } catch (error) {
+        console.error(`  ✗ Attachment failed for ${issueKey}: ${error.message}`);
+      }
+    }
+  }
+  if (attachmentCount) {
+    console.log(`\n✓ Uploaded ${attachmentCount} attachment(s)`);
+  }
+
+  // Step 4: Create links (dependencies)
   console.log('\n📎 Creating links...');
   for (const task of batch.tasks) {
     if (!task.links?.length) continue;
@@ -382,6 +424,15 @@ async function createTask(task, common, epicKey, hostName, hostConfig, fieldIds)
     fields[fieldIds.assignedGroup] = { name: common.assigned_group };
   }
 
+  // Assignee
+  if (task.assignee) {
+    // Strip email domain if present (Jira Server uses username, not email)
+    const assigneeName = task.assignee.includes('@')
+      ? task.assignee.split('@')[0]
+      : task.assignee;
+    fields.assignee = { name: assigneeName };
+  }
+
   // Components
   const components = task.components || common.components;
   if (components?.length) {
@@ -392,6 +443,46 @@ async function createTask(task, common, epicKey, hostName, hostConfig, fieldIds)
 
   const result = await createIssue(hostName, { fields });
   return result.key;
+}
+
+/**
+ * Resolve an attachment path (absolute or relative to the batch YAML file).
+ * Handles macOS screenshot filenames that use Unicode narrow no-break space (U+202F)
+ * before AM/PM by falling back to a fuzzy directory match when exact path not found.
+ */
+function resolveAttachmentPath(attachmentPath, batchFilePath) {
+  let resolved;
+  if (attachmentPath.startsWith('/') || attachmentPath.startsWith('~')) {
+    // Absolute path (expand ~ if needed)
+    if (attachmentPath.startsWith('~')) {
+      resolved = attachmentPath.replace(/^~/, process.env.HOME || '');
+    } else {
+      resolved = attachmentPath;
+    }
+  } else {
+    // Relative to the batch YAML file's directory
+    resolved = resolve(dirname(batchFilePath), attachmentPath);
+  }
+
+  // If exact path exists, return it
+  if (existsSync(resolved)) return resolved;
+
+  // Fuzzy fallback: normalize Unicode whitespace variants and try directory listing
+  // macOS screenshots use U+202F (narrow no-break space) before AM/PM
+  try {
+    const dir = dirname(resolved);
+    const base = pathBasename(resolved);
+    // Normalize all whitespace-like chars to regular space for comparison
+    const normalize = (s) => s.replace(/[\u00a0\u2007\u202f\u2009\u200a\u205f]/g, ' ');
+    const normalizedBase = normalize(base);
+    const files = readdirSync(dir);
+    const match = files.find(f => normalize(f) === normalizedBase);
+    if (match) return resolve(dir, match);
+  } catch {
+    // Directory doesn't exist or isn't readable — fall through
+  }
+
+  return resolved;
 }
 
 /**

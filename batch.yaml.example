@@ -78,6 +78,9 @@ tasks:
     
     # Issue type (overrides common.default_issue_type)
     issue_type: Story
+
+    # Assignee (username or email — domain is stripped automatically)
+    assignee: "jdoe@company.com"
     
     # Story points (overrides common.default_story_points)
     story_points: 5
@@ -109,6 +112,13 @@ tasks:
       # Or reference an existing Jira ticket by key
       - depends_on: "SRE-98765"
 
+    # Attachments - files uploaded after ticket creation
+    attachments:
+      # Absolute path
+      - /Users/me/Desktop/screenshot.png
+      # Relative to this YAML file's directory
+      - ./docs/architecture-diagram.pdf
+
   # Task with dependency chain
   - summary: "Implement OAuth2 integration"
     description: "Implement the authentication flow as designed."
@@ -125,7 +135,8 @@ tasks:
       - "risk"
 
 # Notes:
-# - Tasks are created in order, then links are established
+# - Tasks are created in order, then attachments uploaded, then links established
+# - Attachment paths can be absolute or relative to the YAML file
 # - depends_on resolves by exact summary match or Jira key
 # - acceptance_criteria are formatted as bullet list in description
 # - Field IDs (story points, epic link, etc.) are looked up dynamically

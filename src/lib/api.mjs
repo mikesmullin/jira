@@ -3,6 +3,8 @@
  * Handles HTTP requests to Jira with PAT authentication
  */
 
+import { readFileSync } from 'fs';
+import { basename } from 'path';
 import { getHostConfig } from './config.mjs';
 
 /**
@@ -316,6 +318,40 @@ export async function getFieldOptions(hostName, projectKey, issueType, fieldId) 
 export async function getLinkTypes(hostName) {
   const result = await get(hostName, '/issueLinkType');
   return result.issueLinkTypes || [];
+}
+
+/**
+ * Add an attachment to an issue
+ * Uses multipart/form-data upload per Jira REST API
+ * @param {string} hostName - Jira host name
+ * @param {string} issueKey - Issue key (e.g., SRE-12345)
+ * @param {string} filePath - Absolute path to the file to attach
+ * @returns {Array} Array of attachment metadata objects
+ */
+export async function addAttachment(hostName, issueKey, filePath) {
+  const host = getHostConfig(hostName);
+  const url = `${host.url}${host.api}/issue/${issueKey}/attachments`;
+  const fileName = basename(filePath);
+  const fileData = readFileSync(filePath);
+
+  const formData = new FormData();
+  formData.append('file', new Blob([fileData]), fileName);
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${host.token}`,
+      'X-Atlassian-Token': 'no-check',
+    },
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Attachment upload failed (${response.status}): ${text}`);
+  }
+
+  return response.json();
 }
 
 /**
