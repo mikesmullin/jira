@@ -11,6 +11,7 @@ import { createIssue, getIssue, updateIssue, getLinkTypes, getTransitions, doTra
 import { getHostConfig, loadConfig, getDefaultHost } from '../lib/config.mjs';
 import { saveIssue } from '../lib/storage.mjs';
 import { getFieldId, getCommonFieldIds, hasFieldCache } from '../lib/fields.mjs';
+import { getHostFieldMap, mapFieldForJira } from '../lib/field-map.mjs';
 
 const HELP = `
 jira batch - Bulk create tickets from YAML file 
@@ -245,6 +246,7 @@ async function planBatch(batch, common, hostName, hostConfig, fieldIds, batchFil
 async function applyBatch(batch, common, hostName, hostConfig, fieldIds, batchFilePath) {
   const filePath = batchFilePath; // alias for resolveAttachmentPath calls
   console.log(`\n🚀 Creating tickets in ${hostName}...\n`);
+  const hostFieldMap = getHostFieldMap(hostName);
 
   const createdTasks = new Map(); // summary -> issueKey for linking
   let epicKey = null;
@@ -276,7 +278,7 @@ async function applyBatch(batch, common, hostName, hostConfig, fieldIds, batchFi
     console.log(`\n[${i + 1}/${batch.tasks.length}] Creating: ${task.summary}`);
 
     try {
-      const issueKey = await createTask(task, common, epicKey, hostName, hostConfig, fieldIds);
+      const issueKey = await createTask(task, common, epicKey, hostName, hostConfig, fieldIds, hostFieldMap);
       createdTasks.set(task.summary, issueKey);
       console.log(`  ✓ Created: ${issueKey}`);
 
@@ -387,7 +389,7 @@ async function createEpic(epic, common, hostName, hostConfig, fieldIds) {
 /**
  * Create a task in Jira
  */
-async function createTask(task, common, epicKey, hostName, hostConfig, fieldIds) {
+async function createTask(task, common, epicKey, hostName, hostConfig, fieldIds, hostFieldMap = {}) {
   const issueType = task.issue_type || common.default_issue_type;
 
   const fields = {
@@ -426,11 +428,40 @@ async function createTask(task, common, epicKey, hostName, hostConfig, fieldIds)
 
   // Assignee
   if (task.assignee) {
-    // Strip email domain if present (Jira Server uses username, not email)
-    const assigneeName = task.assignee.includes('@')
-      ? task.assignee.split('@')[0]
-      : task.assignee;
-    fields.assignee = { name: assigneeName };
+    if (typeof task.assignee === 'string') {
+      fields.assignee = { name: task.assignee.trim() };
+    } else if (typeof task.assignee === 'object') {
+      if (task.assignee.accountId) {
+        fields.assignee = { accountId: task.assignee.accountId };
+      } else if (task.assignee.name) {
+        fields.assignee = { name: task.assignee.name };
+      } else if (task.assignee.emailAddress) {
+        fields.assignee = { name: task.assignee.emailAddress };
+      }
+    }
+  }
+
+  // Due Date (canonical Jira system field)
+  if (task.duedate || task.due_date) {
+    fields.duedate = task.duedate || task.due_date;
+  }
+
+  // Target Start / Target End (custom fields)
+  if ((task.target_start || task.targetStart) && fieldIds.targetStart) {
+    fields[fieldIds.targetStart] = task.target_start || task.targetStart;
+  }
+  if ((task.target_end || task.targetEnd) && fieldIds.targetEnd) {
+    fields[fieldIds.targetEnd] = task.target_end || task.targetEnd;
+  }
+
+  // Host-configured field mappings (e.g. services -> customfield_10342)
+  for (const [alias] of Object.entries(hostFieldMap)) {
+    if (!(alias in task)) continue;
+
+    const { field, value } = await mapFieldForJira(hostName, alias, task[alias]);
+    if (field && fields[field] === undefined) {
+      fields[field] = value;
+    }
   }
 
   // Components

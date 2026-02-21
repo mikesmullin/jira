@@ -164,6 +164,8 @@ export function getCommonFieldIds(hostName) {
     epicLink: getFieldId(hostName, 'epic link'),
     storyPoints: getFieldId(hostName, 'story points'),
     assignedGroup: getFieldId(hostName, 'assigned group'),
+    targetStart: getFieldId(hostName, 'target start'),
+    targetEnd: getFieldId(hostName, 'target end'),
     sprint: getFieldId(hostName, 'sprint'),
   };
 }

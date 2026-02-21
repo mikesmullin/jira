@@ -9,6 +9,7 @@ import { listStoredIds, resolveId } from '../lib/id.mjs';
 import { readTicket, clearPending, saveIssue } from '../lib/storage.mjs';
 import { updateIssue, addComment, getIssue, getTransitions, doTransition, deleteIssue, createLink, deleteLink, getIssueLinks } from '../lib/api.mjs';
 import { getHostConfig, loadConfig } from '../lib/config.mjs';
+import { mapFieldForJira } from '../lib/field-map.mjs';
 
 const HELP = `
 jira apply - Apply pending changes to remote Jira
@@ -126,7 +127,8 @@ async function applyTicketChanges(ticketInfo) {
     if (field === 'status') {
       await applyStatusChange(hostName, ticket.key, value);
     } else {
-      fieldUpdates[field] = formatFieldValue(field, value);
+      const mapped = await mapFieldForJira(hostName, field, value);
+      fieldUpdates[mapped.field] = formatFieldValue(mapped.field, mapped.value);
     }
   }
 

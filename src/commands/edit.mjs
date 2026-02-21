@@ -69,8 +69,8 @@ export async function runEdit(args) {
   if (field === 'labels') {
     handleLabelEdit(resolved.filePath, ticket, value);
   } else {
-    // Parse JSON for custom fields (supports arrays for multiselect fields)
-    const parsedValue = field.startsWith('customfield_') ? parseValue(value) : value;
+    // Parse JSON for any field value (supports arrays/objects for mapped fields)
+    const parsedValue = parseValue(value);
     queueEdit(resolved.filePath, field, parsedValue);
   }
 
