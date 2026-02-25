@@ -102,6 +102,20 @@ function showFull(ticket) {
   console.log('## Description\n');
   console.log(ticket.description || '_No description provided._');
 
+  // Show comments if any
+  if (ticket._comments && ticket._comments.length > 0) {
+    console.log('\n---\n');
+    console.log(`## Comments (${ticket._comments.length})\n`);
+    for (const comment of ticket._comments) {
+      const author = comment.author?.displayName || 'Unknown';
+      const date = comment.created?.split('T')[0] || '';
+      const time = comment.created?.split('T')[1]?.split('.')[0] || '';
+      console.log(`### ${author} — ${date} ${time}\n`);
+      console.log(comment.body || '_No content_');
+      console.log('');
+    }
+  }
+
   // Show pending changes if any
   if (ticket.offline?.pending) {
     console.log('\n---\n');
