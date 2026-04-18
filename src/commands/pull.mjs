@@ -8,7 +8,8 @@ import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { join } from 'path';
 import yaml from 'js-yaml';
 import { loadConfig, getHostConfig, getCacheDir } from '../lib/config.mjs';
-import { searchAll, getComments, getChangelog, getIssue } from '../lib/api.mjs';
+import { searchAll, getComments, getChangelog, getIssue, getIssueUpdated } from '../lib/api.mjs';
+import { readTicket } from '../lib/storage.mjs';
 import { saveIssue, ensureStorageDirs } from '../lib/storage.mjs';
 import { resolveId } from '../lib/id.mjs';
 
@@ -17,7 +18,7 @@ jira pull - Fetch tickets from Jira to local storage
 
 USAGE:
   jira pull [--host <name>] [--full]
-  jira pull [id...] [--host <name>]
+  jira pull [id...] [--host <name>] [--full]
 
 ARGUMENTS:
   [id...]           Optional ticket IDs to pull (Jira keys like SRE-12345)
@@ -26,23 +27,26 @@ ARGUMENTS:
 OPTIONS:
   --host <name>     Pull from specific host (required when pulling by ID
                     unless tickets already exist locally)
-  --full            Ignore last_sync, pull everything fresh
+  --full            Force complete refresh, bypassing change detection
   -h, --help        Show this help message
 
 BEHAVIOR:
   Pull is re-entrant and always safe to run:
   - Fetches tickets matching sync patterns in config.yaml
   - Uses incremental sync (updated since last pull) by default
-  - Use --full to force a complete refresh
+  - For single tickets: skips pull if remote hasn't changed (compares timestamps)
+  - Use --full to force a complete refresh, ignoring change detection
   - Overwrites remote data in local storage
   - Preserves the offline: key (pending edits, last_read, etc.)
   - Pending changes are never lost
+  - Tickets with pending local changes are always pulled (to detect conflicts)
 
 EXAMPLES:
   jira pull                       # Pull from all hosts (incremental)
   jira pull --host company        # Pull only from Company Jira
   jira pull --full                # Force full refresh
-  jira pull SRE-123               # Pull a specific ticket
+  jira pull SRE-123               # Pull a specific ticket (skips if unchanged)
+  jira pull SRE-123 --full        # Force pull even if unchanged
   jira pull SRE-123 SRE-456       # Pull multiple specific tickets
   jira pull SRE-123 --host work   # Pull from specific host
 `;
@@ -104,7 +108,7 @@ export async function runPull(args) {
 
   // If positional arguments provided, pull specific tickets
   if (positionals.length > 0) {
-    const pulled = await pullSpecificTickets(positionals, values.host);
+    const pulled = await pullSpecificTickets(positionals, values.host, values.full);
     console.log(`\n✓ Pulled ${pulled} ticket(s)`);
     return;
   }
@@ -133,7 +137,7 @@ export async function runPull(args) {
 /**
  * Pull specific tickets by ID (Jira key, short ID, or full ID)
  */
-async function pullSpecificTickets(ids, hostName) {
+async function pullSpecificTickets(ids, hostName, forceFull = false) {
   const config = loadConfig();
   let pulled = 0;
 
@@ -141,7 +145,7 @@ async function pullSpecificTickets(ids, hostName) {
 
   for (const id of ids) {
     try {
-      const result = await pullSingleTicket(id, hostName, config);
+      const result = await pullSingleTicket(id, hostName, config, forceFull);
       if (result) {
         pulled++;
       }
@@ -156,8 +160,9 @@ async function pullSpecificTickets(ids, hostName) {
 /**
  * Pull a single ticket by ID
  * Determines host from: explicit --host, existing local ticket, or default host
+ * If forceFull is true, skip the updated timestamp check and always pull
  */
-async function pullSingleTicket(id, explicitHost, config) {
+async function pullSingleTicket(id, explicitHost, config, forceFull = false) {
   // Check if input looks like a Jira key (e.g., SRE-12345)
   const isJiraKey = /^[A-Z]+-\d+$/i.test(id);
   const ticketKey = isJiraKey ? id.toUpperCase() : null;
@@ -202,6 +207,28 @@ async function pullSingleTicket(id, explicitHost, config) {
   }
 
   const hostConfig = getHostConfig(targetHost);
+
+  // Check if ticket exists locally and if we can skip the pull
+  let existingTicket = null;
+  try {
+    const resolved = resolveId(resolvedKey);
+    existingTicket = readTicket(resolved.filePath);
+  } catch {
+    // Ticket doesn't exist locally yet - proceed with full pull
+  }
+
+  // If ticket exists locally with no pending changes, check if remote has been updated
+  // Skip this optimization if forceFull is set
+  if (!forceFull && existingTicket && !existingTicket.offline?.pending) {
+    const localUpdated = existingTicket.updated;
+    if (localUpdated) {
+      const remoteUpdated = await getIssueUpdated(targetHost, resolvedKey);
+      if (remoteUpdated && remoteUpdated === localUpdated) {
+        console.log(`   ○ ${resolvedKey}: not modified since last pull`);
+        return false;
+      }
+    }
+  }
 
   // Fetch the issue from Jira
   const issue = await getIssue(targetHost, resolvedKey);

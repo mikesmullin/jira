@@ -73,6 +73,15 @@ export async function getIssue(hostName, issueKey, fields = null) {
 }
 
 /**
+ * Get only the updated timestamp for an issue (lightweight check)
+ * Returns the updated timestamp string or null if not found
+ */
+export async function getIssueUpdated(hostName, issueKey) {
+  const result = await get(hostName, `/issue/${issueKey}?fields=updated`);
+  return result?.fields?.updated || null;
+}
+
+/**
  * Search issues with JQL
  */
 export async function search(hostName, jql, options = {}) {
