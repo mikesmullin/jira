@@ -3,7 +3,7 @@
  * Manages ticket Markdown files with YAML frontmatter
  */
 
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync } from 'fs';
 import { join, dirname } from 'path';
 import yaml from 'js-yaml';
 import { getStorageDir, getCacheDir } from './config.mjs';
@@ -415,6 +415,55 @@ export function readTicket(filePath) {
   const body = match[2];
 
   return { ...frontmatter, _body: body };
+}
+
+/**
+ * Get all tickets from local storage
+ * Returns array of { filePath, ticket } objects
+ */
+export function getAllTickets() {
+  const storageDir = getStorageDir();
+  const tickets = [];
+
+  if (!existsSync(storageDir)) {
+    return tickets;
+  }
+
+  const files = readdirSync(storageDir).filter(f => f.endsWith('.md') && !f.startsWith('_'));
+  
+  for (const file of files) {
+    const filePath = join(storageDir, file);
+    const ticket = readTicket(filePath);
+    if (ticket) {
+      tickets.push({ filePath, ticket });
+    }
+  }
+
+  return tickets;
+}
+
+/**
+ * Find all local tickets where Parent Link or Epic Link matches the given key
+ * @param {string} parentKey - The Jira key to find children of
+ * @param {object} hierarchyFields - { parent_link: {field_id, jql_name}, epic_link: {field_id, jql_name} }
+ */
+export function findChildrenByParentKey(parentKey, hierarchyFields = null) {
+  const fields = hierarchyFields || {
+    parent_link: { field_id: 'customfield_10301' },
+    epic_link: { field_id: 'customfield_10102' },
+  };
+  
+  const parentFieldId = fields.parent_link?.field_id || 'customfield_10301';
+  const epicFieldId = fields.epic_link?.field_id || 'customfield_10102';
+  
+  const allTickets = getAllTickets();
+  return allTickets
+    .filter(({ ticket }) => {
+      const parentLink = ticket.custom_fields?.[parentFieldId];
+      const epicLink = ticket.custom_fields?.[epicFieldId];
+      return parentLink === parentKey || epicLink === parentKey;
+    })
+    .map(({ ticket }) => ticket);
 }
 
 /**

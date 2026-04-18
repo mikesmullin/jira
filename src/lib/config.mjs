@@ -97,7 +97,41 @@ export function getHostConfig(hostName) {
     api: hostConfig.api || '/rest/api/2',
     token,
     sync: hostConfig.sync || [],
+    hierarchy_fields: normalizeHierarchyFields(hostConfig.hierarchy_fields),
   };
+}
+
+/**
+ * Normalize hierarchy_fields config to consistent format
+ * Handles both old format (flat string) and new format (nested object)
+ */
+function normalizeHierarchyFields(fields) {
+  const defaults = {
+    parent_link: { field_id: 'customfield_10301', jql_name: 'Parent Link' },
+    epic_link: { field_id: 'customfield_10102', jql_name: 'Epic Link' },
+  };
+
+  if (!fields) return defaults;
+
+  const result = {};
+  for (const [key, value] of Object.entries(fields)) {
+    if (typeof value === 'string') {
+      // Old format: parent_link: customfield_10301
+      result[key] = {
+        field_id: value,
+        jql_name: defaults[key]?.jql_name || key.replace('_', ' '),
+      };
+    } else {
+      // New format: parent_link: { field_id: ..., jql_name: ... }
+      result[key] = {
+        field_id: value.field_id || defaults[key]?.field_id,
+        jql_name: value.jql_name || defaults[key]?.jql_name,
+      };
+    }
+  }
+
+  // Ensure we have both fields
+  return { ...defaults, ...result };
 }
 
 /**
@@ -132,6 +166,21 @@ export function getHostNameFromUrl(url) {
     }
   }
   return null;
+}
+
+/**
+ * Get hierarchy fields config for a host URL
+ * Returns { parent_link: { field_id, jql_name }, epic_link: { field_id, jql_name } }
+ */
+export function getHierarchyFieldsForUrl(url) {
+  const config = loadConfig();
+  for (const [, cfg] of Object.entries(config.hosts || {})) {
+    if (cfg.url === url || url?.includes(cfg.url)) {
+      return normalizeHierarchyFields(cfg.hierarchy_fields);
+    }
+  }
+  // Return defaults if host not found
+  return normalizeHierarchyFields(null);
 }
 
 /**

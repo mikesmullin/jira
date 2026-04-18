@@ -8,7 +8,7 @@ import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { join } from 'path';
 import yaml from 'js-yaml';
 import { loadConfig, getHostConfig, getCacheDir } from '../lib/config.mjs';
-import { searchAll, getComments, getChangelog, getIssue, getIssueUpdated } from '../lib/api.mjs';
+import { searchAll, getComments, getChangelog, getIssue, getIssueUpdated, search } from '../lib/api.mjs';
 import { readTicket } from '../lib/storage.mjs';
 import { saveIssue, ensureStorageDirs } from '../lib/storage.mjs';
 import { resolveId } from '../lib/id.mjs';
@@ -18,7 +18,7 @@ jira pull - Fetch tickets from Jira to local storage
 
 USAGE:
   jira pull [--host <name>] [--full]
-  jira pull [id...] [--host <name>] [--full]
+  jira pull [id...] [--host <name>] [--full] [--recursive]
 
 ARGUMENTS:
   [id...]           Optional ticket IDs to pull (Jira keys like SRE-12345)
@@ -28,6 +28,7 @@ OPTIONS:
   --host <name>     Pull from specific host (required when pulling by ID
                     unless tickets already exist locally)
   --full            Force complete refresh, bypassing change detection
+  --recursive       Also pull all descendant tickets (children, grandchildren, etc.)
   -h, --help        Show this help message
 
 BEHAVIOR:
@@ -36,6 +37,7 @@ BEHAVIOR:
   - Uses incremental sync (updated since last pull) by default
   - For single tickets: skips pull if remote hasn't changed (compares timestamps)
   - Use --full to force a complete refresh, ignoring change detection
+  - Use --recursive to also fetch all child tickets
   - Overwrites remote data in local storage
   - Preserves the offline: key (pending edits, last_read, etc.)
   - Pending changes are never lost
@@ -47,6 +49,7 @@ EXAMPLES:
   jira pull --full                # Force full refresh
   jira pull SRE-123               # Pull a specific ticket (skips if unchanged)
   jira pull SRE-123 --full        # Force pull even if unchanged
+  jira pull SRE-123 --recursive   # Pull ticket and all descendants
   jira pull SRE-123 SRE-456       # Pull multiple specific tickets
   jira pull SRE-123 --host work   # Pull from specific host
 `;
@@ -94,6 +97,7 @@ export async function runPull(args) {
     options: {
       host: { type: 'string', short: 'H' },
       full: { type: 'boolean', default: false },
+      recursive: { type: 'boolean', default: false },
       help: { type: 'boolean', short: 'h' },
     },
     allowPositionals: true,
@@ -108,7 +112,7 @@ export async function runPull(args) {
 
   // If positional arguments provided, pull specific tickets
   if (positionals.length > 0) {
-    const pulled = await pullSpecificTickets(positionals, values.host, values.full);
+    const pulled = await pullSpecificTickets(positionals, values.host, values.full, values.recursive);
     console.log(`\n✓ Pulled ${pulled} ticket(s)`);
     return;
   }
@@ -137,13 +141,24 @@ export async function runPull(args) {
 /**
  * Pull specific tickets by ID (Jira key, short ID, or full ID)
  */
-async function pullSpecificTickets(ids, hostName, forceFull = false) {
+async function pullSpecificTickets(ids, hostName, forceFull = false, recursive = false) {
   const config = loadConfig();
   let pulled = 0;
 
-  console.log(`\n📥 Pulling ${ids.length} specific ticket(s)...`);
+  // Expand IDs to include descendants if recursive
+  let allIds = [...ids];
+  if (recursive) {
+    console.log(`\n📥 Finding descendants...`);
+    const descendants = await findAllDescendants(ids, hostName, config);
+    if (descendants.length > 0) {
+      console.log(`   Found ${descendants.length} descendant ticket(s)`);
+      allIds = [...ids, ...descendants];
+    }
+  }
 
-  for (const id of ids) {
+  console.log(`\n📥 Pulling ${allIds.length} ticket(s)...`);
+
+  for (const id of allIds) {
     try {
       const result = await pullSingleTicket(id, hostName, config, forceFull);
       if (result) {
@@ -155,6 +170,66 @@ async function pullSpecificTickets(ids, hostName, forceFull = false) {
   }
 
   return pulled;
+}
+
+/**
+ * Find all descendant ticket keys recursively via JQL
+ * Uses both Parent Link and Epic Link to find children at each level
+ */
+async function findAllDescendants(rootKeys, explicitHost, config) {
+  // Normalize to Jira keys
+  const normalizedKeys = rootKeys.map(k => k.toUpperCase());
+  
+  // Determine host (use first key to figure it out)
+  let targetHost = explicitHost;
+  if (!targetHost) {
+    if (config.default_host) {
+      targetHost = config.default_host;
+    } else {
+      const hosts = Object.keys(config.hosts);
+      if (hosts.length === 1) {
+        targetHost = hosts[0];
+      } else {
+        throw new Error(`Multiple hosts configured - use --host flag to specify which one`);
+      }
+    }
+  }
+
+  // Get hierarchy field JQL names from config
+  const hostConfig = getHostConfig(targetHost);
+  const parentLinkJql = hostConfig.hierarchy_fields?.parent_link?.jql_name || 'Parent Link';
+  const epicLinkJql = hostConfig.hierarchy_fields?.epic_link?.jql_name || 'Epic Link';
+
+  const descendants = [];
+  const visited = new Set(normalizedKeys);
+  const queue = [...normalizedKeys];
+
+  while (queue.length > 0) {
+    const parentKey = queue.shift();
+    
+    try {
+      // Search for children via Parent Link OR Epic Link
+      const jql = `"${parentLinkJql}" = ${parentKey} OR "${epicLinkJql}" = ${parentKey}`;
+      const result = await search(targetHost, jql, {
+        maxResults: 100,
+        fields: ['key'],
+      });
+
+      for (const issue of result.issues || []) {
+        const childKey = issue.key;
+        if (!visited.has(childKey)) {
+          visited.add(childKey);
+          queue.push(childKey);
+          descendants.push(childKey);
+        }
+      }
+    } catch (err) {
+      // Search failed, continue with what we have
+      console.error(`   ⚠ Could not search children of ${parentKey}`);
+    }
+  }
+
+  return descendants;
 }
 
 /**

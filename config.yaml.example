@@ -50,6 +50,18 @@ hosts:
     
     # REST API path (usually /rest/api/2 for Data Center)
     api: /rest/api/2
+
+    # Optional: Parent-child hierarchy fields for --recursive traversal
+    # These field IDs vary between Jira instances. Find yours in Admin > Custom Fields
+    # or by inspecting /rest/api/2/field endpoint
+    # If omitted, defaults to common Jira Software field IDs
+    hierarchy_fields:
+      parent_link:
+        field_id: customfield_10301   # Custom field ID storing parent ticket key
+        jql_name: Parent Link          # JQL clause name for searching
+      epic_link:
+        field_id: customfield_10102   # Custom field ID storing epic key
+        jql_name: Epic Link            # JQL clause name for searching
     
     # Sync patterns - JQL queries that define which tickets to pull
     # Each pattern is fetched during `jira pull`
