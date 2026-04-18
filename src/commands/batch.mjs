@@ -38,9 +38,9 @@ YAML SCHEMA:
   common:             # Override defaults (optional)
     project:
       id: 17500
-      name: SRE
+      name: TIK
     labels: ["project-tag"]
-    assigned_group: ".SRE - Team"
+    assigned_group: ".TIK - Team"
     default_issue_type: Task
     default_story_points: 0
     default_estimate: "0h"
@@ -64,8 +64,23 @@ YAML SCHEMA:
         - /path/to/screenshot.png
         - ./relative/to/yaml/file.pdf
       links:
-        - depends_on: "Other task summary"
-        - depends_on: "SRE-12345"  # Existing ticket key
+        - depends_on: "Other task summary"   # → Dependency link type
+        - depends_on: "TIK-12345"            # Existing ticket key
+        - relates_to: "TIK-12345"            # → Relates
+        - blocks: "TIK-12345"                # → Blocks (outward)
+        - is_blocked_by: "TIK-12345"         # → Blocks (inward)
+        - duplicates: "TIK-12345"            # → Duplicate (outward)
+        - is_duplicated_by: "TIK-12345"      # → Duplicate (inward)
+        - clones: "TIK-12345"                # → Cloners (outward)
+        - is_cloned_by: "TIK-12345"          # → Cloners (inward)
+        - causes: "TIK-12345"                # → Causes (outward)
+        - is_caused_by: "TIK-12345"          # → Causes (inward)
+        - tests: "TIK-12345"                 # → Tests (outward)
+        - tested_by: "TIK-12345"             # → Tests (inward)
+        - fixes: "TIK-12345"                 # → Fixes (outward)
+        - is_fixed_by: "TIK-12345"           # → Fixes (inward)
+        - splits_from: "TIK-12345"           # → Split (outward)
+        - splits_to: "TIK-12345"             # → Split (inward)
 
 NOTES:
   - Run "jira field sync" first to cache custom field IDs
@@ -80,6 +95,30 @@ EXAMPLES:
 
 // Link type cache per host
 const linkTypeCache = new Map();
+
+/**
+ * Maps per-link YAML keys to a Jira link type name and direction.
+ * sourceIsOutward=true  → source issue is the "outward" issue (e.g. "blocks")
+ * sourceIsOutward=false → source issue is the "inward" issue (e.g. "is blocked by")
+ */
+const LINK_KEY_MAP = {
+  depends_on:       { type: 'Dependency', sourceIsOutward: false },
+  relates_to:       { type: 'Relates',    sourceIsOutward: true  },
+  blocks:           { type: 'Blocks',     sourceIsOutward: true  },
+  is_blocked_by:    { type: 'Blocks',     sourceIsOutward: false },
+  duplicates:       { type: 'Duplicate',  sourceIsOutward: true  },
+  is_duplicated_by: { type: 'Duplicate',  sourceIsOutward: false },
+  clones:           { type: 'Cloners',    sourceIsOutward: true  },
+  is_cloned_by:     { type: 'Cloners',    sourceIsOutward: false },
+  causes:           { type: 'Causes',     sourceIsOutward: true  },
+  is_caused_by:     { type: 'Causes',     sourceIsOutward: false },
+  tests:            { type: 'Tests',      sourceIsOutward: true  },
+  tested_by:        { type: 'Tests',      sourceIsOutward: false },
+  fixes:            { type: 'Fixes',      sourceIsOutward: true  },
+  is_fixed_by:      { type: 'Fixes',      sourceIsOutward: false },
+  splits_from:      { type: 'Split',      sourceIsOutward: true  },
+  splits_to:        { type: 'Split',      sourceIsOutward: false },
+};
 
 export async function runBatch(args) {
   const { values, positionals } = parseArgs({
@@ -223,8 +262,9 @@ async function planBatch(batch, common, hostName, hostConfig, fieldIds, batchFil
 
     if (task.links?.length) {
       for (const link of task.links) {
-        if (link.depends_on) {
-          console.log(`     → depends_on: ${link.depends_on}`);
+        const linkKey = Object.keys(link).find(k => LINK_KEY_MAP[k]);
+        if (linkKey) {
+          console.log(`     → ${linkKey}: ${link[linkKey]}`);
         }
       }
     }
@@ -337,12 +377,14 @@ async function applyBatch(batch, common, hostName, hostConfig, fieldIds, batchFi
     if (!sourceKey) continue;
 
     for (const link of task.links) {
-      if (link.depends_on) {
-        const targetKey = resolveLink(link.depends_on, createdTasks);
+      const linkKey = Object.keys(link).find(k => LINK_KEY_MAP[k]);
+      if (linkKey) {
+        const linkDef = LINK_KEY_MAP[linkKey];
+        const targetKey = resolveLink(link[linkKey], createdTasks);
         if (targetKey) {
           try {
-            await createLink(hostName, sourceKey, targetKey, common.link_type);
-            console.log(`  ✓ ${sourceKey} depends_on ${targetKey}`);
+            await createLink(hostName, sourceKey, targetKey, linkDef.type, linkDef.sourceIsOutward);
+            console.log(`  ✓ ${sourceKey} ${linkKey} ${targetKey}`);
           } catch (error) {
             console.error(`  ✗ Link failed: ${error.message}`);
           }
@@ -553,7 +595,7 @@ function resolveLink(target, createdTasks) {
  * `common.link_type` in batch YAML, with runtime lookup from the
  * /issueLinkType API. Link type names vary by Jira instance!
  */
-async function createLink(hostName, sourceKey, targetKey, linkTypeName = 'Dependency') {
+async function createLink(hostName, sourceKey, targetKey, linkTypeName = 'Dependency', sourceIsOutward = false) {
   const host = getHostConfig(hostName);
   const url = `${host.url}${host.api}/issueLink`;
 
@@ -562,8 +604,8 @@ async function createLink(hostName, sourceKey, targetKey, linkTypeName = 'Depend
 
   const body = {
     type: { name: resolvedLinkType },
-    inwardIssue: { key: sourceKey },
-    outwardIssue: { key: targetKey },
+    inwardIssue:  { key: sourceIsOutward ? targetKey : sourceKey },
+    outwardIssue: { key: sourceIsOutward ? sourceKey : targetKey },
   };
 
   const response = await fetch(url, {
