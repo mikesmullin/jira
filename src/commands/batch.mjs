@@ -53,6 +53,7 @@ YAML SCHEMA:
       story_points: 3
       original_estimate: "4h"
       issue_type: Story           # Task, Story, Bug, Risk
+      priority: "1"               # 1 (highest) to 5 (lowest)
       status: "In Progress"       # Override default_status for this task
       labels: ["extra-label"]
       components: ["Backend"]
@@ -60,6 +61,9 @@ YAML SCHEMA:
         - "Criterion 1"
         - "Criterion 2"
       assignee: "jdoe@company.com" # Assignee (username or email)
+      duedate: "2026-05-15"       # Due date (YYYY-MM-DD)
+      target_start: "2026-04-01"  # Custom field alias (if in field_map)
+      cf[10303]: "2026-05-15"     # Or use cf[ID] syntax directly
       attachments:              # Files to attach after creation
         - /path/to/screenshot.png
         - ./relative/to/yaml/file.pdf
@@ -86,6 +90,8 @@ NOTES:
   - Run "jira field sync" first to cache custom field IDs
   - Links resolve by matching task summary or existing ticket key
   - Transitions are skipped if target status is not available
+  - Custom fields: use aliases from config.yaml field_map (e.g. target_start)
+    or cf[ID] syntax for raw field IDs (e.g. cf[10302]: "2026-04-27")
 
 EXAMPLES:
   jira batch tasks.yaml --plan      # Preview what would be created
@@ -248,6 +254,7 @@ async function planBatch(batch, common, hostName, hostConfig, fieldIds, batchFil
     }
 
     if (task.assignee) console.log(`     Assignee: ${task.assignee}`);
+    if (task.priority) console.log(`     Priority: ${typeof task.priority === 'object' ? task.priority.name || task.priority.id : task.priority}`);
     if (storyPoints) console.log(`     Story Points: ${storyPoints}`);
     if (task.original_estimate) console.log(`     Estimate: ${task.original_estimate}`);
     if (task.labels?.length) console.log(`     Labels: ${task.labels.join(', ')}`);
@@ -298,7 +305,7 @@ async function applyBatch(batch, common, hostName, hostConfig, fieldIds, batchFi
       console.log(`📌 Using existing epic: ${epicKey}`);
     } else {
       epicKey = await createEpic(batch.epic, common, hostName, hostConfig, fieldIds);
-      console.log(`✓ Created epic: ${epicKey}`);
+      console.log(`✓ Created epic: ${hostConfig.url}/browse/${epicKey}`);
 
       // Transition epic to default status if configured
       if (common.default_status) {
@@ -320,7 +327,7 @@ async function applyBatch(batch, common, hostName, hostConfig, fieldIds, batchFi
     try {
       const issueKey = await createTask(task, common, epicKey, hostName, hostConfig, fieldIds, hostFieldMap);
       createdTasks.set(task.summary, issueKey);
-      console.log(`  ✓ Created: ${issueKey}`);
+      console.log(`  ✓ Created: ${hostConfig.url}/browse/${issueKey}`);
 
       // Transition to default status if configured
       const targetStatus = task.status || common.default_status;
@@ -483,6 +490,16 @@ async function createTask(task, common, epicKey, hostName, hostConfig, fieldIds,
     }
   }
 
+  // Priority (standard Jira field)
+  // Accepts: "1", "2", "3", "4", "5" or { name: "1" } or { id: "10000" }
+  if (task.priority) {
+    if (typeof task.priority === 'string') {
+      fields.priority = { name: task.priority };
+    } else if (typeof task.priority === 'object') {
+      fields.priority = task.priority;
+    }
+  }
+
   // Due Date (canonical Jira system field)
   if (task.duedate || task.due_date) {
     fields.duedate = task.duedate || task.due_date;
@@ -503,6 +520,15 @@ async function createTask(task, common, epicKey, hostName, hostConfig, fieldIds,
     const { field, value } = await mapFieldForJira(hostName, alias, task[alias]);
     if (field && fields[field] === undefined) {
       fields[field] = value;
+    }
+  }
+
+  // Generic custom field syntax: cf[10302] -> customfield_10302
+  for (const [key, value] of Object.entries(task)) {
+    const cfMatch = key.match(/^cf\[(\d+)\]$/);
+    if (cfMatch) {
+      const fieldId = `customfield_${cfMatch[1]}`;
+      fields[fieldId] = value;
     }
   }
 

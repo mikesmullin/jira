@@ -62,6 +62,25 @@ hosts:
       epic_link:
         field_id: customfield_10102   # Custom field ID storing epic key
         jql_name: Epic Link            # JQL clause name for searching
+
+    # Optional: Custom field mappings
+    # Maps human-readable names to Jira custom field IDs
+    # Allows using friendly names in batch YAML instead of cf[XXXXX] syntax
+    # Types: date, string, number, insight-multi (for Insight/Assets fields)
+    field_map:
+      # Date fields
+      target_start:
+        jira_field: customfield_10302
+        type: date
+      target_end:
+        jira_field: customfield_10303
+        type: date
+      
+      # Insight/Assets fields (multi-select object references)
+      services:
+        jira_field: customfield_10342
+        type: insight-multi
+        object_type: Service
     
     # Sync patterns - JQL queries that define which tickets to pull
     # Each pattern is fetched during `jira pull`
