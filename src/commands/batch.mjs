@@ -208,7 +208,7 @@ function mergeCommon(config, hostConfig, batchCommon, externalConfig = {}) {
     assigned_group: batchCommon?.assigned_group || externalConfig?.assigned_group || hostDefaults.assigned_group,
     additional_groups: batchCommon?.additional_groups || externalConfig?.additional_groups || hostDefaults.additional_groups || [],
     default_issue_type: batchCommon?.default_issue_type || externalConfig?.default_issue_type || hostDefaults.default_issue_type || 'Task',
-    default_story_points: batchCommon?.default_story_points ?? externalConfig?.default_story_points ?? hostDefaults.default_story_points ?? 0,
+    default_story_points: batchCommon?.default_story_points ?? externalConfig?.default_story_points ?? hostDefaults.default_story_points ?? undefined,
     default_estimate: batchCommon?.default_estimate || externalConfig?.default_estimate || hostDefaults.default_estimate || '0h',
     components: batchCommon?.components || externalConfig?.components || hostDefaults.components || [],
     link_type: batchCommon?.link_type || externalConfig?.link_type || hostDefaults.link_type || 'Dependency',
@@ -454,7 +454,7 @@ async function createTask(task, common, epicKey, hostName, hostConfig, fieldIds,
 
   // Story points (use dynamic field lookup)
   const storyPoints = task.story_points ?? common.default_story_points;
-  if (storyPoints !== undefined && storyPoints !== null && fieldIds.storyPoints) {
+  if (storyPoints !== undefined && storyPoints !== null && storyPoints !== 0 && fieldIds.storyPoints) {
     fields[fieldIds.storyPoints] = storyPoints;
   }
 
