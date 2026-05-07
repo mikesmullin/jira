@@ -24,6 +24,7 @@ import { runConfig } from './commands/config.mjs';
 import { runBatch } from './commands/batch.mjs';
 import { runClean } from './commands/clean.mjs';
 import { runDelete } from './commands/delete.mjs';
+import { runMarkdown } from './commands/markdown.mjs';
 
 const HELP = `
 jira - Offline-first Jira CLI with local Markdown storage
@@ -34,6 +35,7 @@ USAGE:
 COMMANDS:
   pull              Fetch tickets from Jira to local storage
   list              List local tickets (changed since last read)
+  markdown <file>   Convert a Markdown file to Jira Wiki Markup (stdout)
   view <id>         View ticket (diff by default, or --full)
   mark <id>         Mark ticket as read (update last_read cursor)
   open <id>         Open ticket file in VS Code
@@ -127,6 +129,9 @@ async function main() {
         break;
       case 'delete':
         await runDelete(commandArgs);
+        break;
+      case 'markdown':
+        await runMarkdown(commandArgs);
         break;
       default:
         console.error(`Unknown command: ${command}`);

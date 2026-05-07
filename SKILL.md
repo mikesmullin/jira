@@ -29,6 +29,7 @@ The Jira CLI follows the pattern of an offline-first architecture with local Mar
 | `apply` | Push changes to remote | `jira apply --help` |
 | `batch <file>` | Bulk create from YAML | `jira batch --help` |
 | `search <jql>` | JQL search (online) | `jira search --help` |
+| `markdown <file>` | Convert Markdown → Jira Wiki Markup (stdout) | `jira markdown --help` |
 | `field` | Field operations | `jira field --help` |
 | `config` | Configuration management | `jira config --help` |
 | `clean` | Remove all local ticket files | `jira clean --help` |
