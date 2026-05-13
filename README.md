@@ -60,6 +60,9 @@ jira visit abc123
 
 # Queue edits (offline)
 jira edit abc123 status "In Progress"
+jira edit abc123 summary "New summary text"
+jira edit abc123 description "Short inline description"
+jira edit abc123 description --file ./description.md
 jira comment abc123 "Working on this"
 
 # Link two tickets

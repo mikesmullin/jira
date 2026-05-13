@@ -21,7 +21,8 @@ The Jira CLI follows the pattern of an offline-first architecture with local Mar
 | `mark <id>` | Mark as read (or `--clear` to unmark) | `jira mark --help` |
 | `open <id>` | Open in VS Code | `jira open --help` |
 | `visit <id>` | Open in browser | `jira visit --help` |
-| `edit <id>` | Queue field changes | `jira edit --help` |
+| `edit <id> <field> <value>` | Queue field changes (`status`, `assignee`, `priority`, `labels`, `summary`, `description`) | `jira edit --help` |
+| `edit <id> <field> --file <path>` | Queue field value read from file (`.md` auto-converted to Jira markup) | `jira edit --help` |
 | `comment <id>` | Queue a comment | `jira comment --help` |
 | `link <id1> <id2>` | Link two tickets | `jira link --help` |
 | `delete <id>` | Soft-delete (or `--clear` to undo) | `jira delete --help` |
@@ -48,6 +49,8 @@ All commands accept three ID formats interchangeably:
 ```bash
 jira pull                              # Fetch from remote
 jira edit abc123 status "In Progress"  # Queued locally
+jira edit abc123 summary "New title"   # Queued locally
+jira edit abc123 description --file ./desc.md  # Queued locally (auto-converted from Markdown)
 jira comment abc123 "Working on it"    # Queued locally
 jira plan                              # Preview diff
 jira apply                             # Push to remote

@@ -3,8 +3,10 @@
  */
 
 import { parseArgs } from 'util';
+import { readFileSync } from 'fs';
 import { resolveId } from '../lib/id.mjs';
 import { queueEdit, readTicket } from '../lib/storage.mjs';
+import { convertMarkdownToJira } from './markdown.mjs';
 import { green, cyan, dim } from '../lib/colors.mjs';
 
 const HELP = `
@@ -12,15 +14,19 @@ jira edit - Queue field changes (stored in offline.pending until apply)
 
 USAGE:
   jira edit <id> <field> <value>
+  jira edit <id> <field> --file <path>
 
 OPTIONS:
-  -h, --help    Show this help message
+  --file <path>   Read field value from file (auto-converts .md to Jira markup)
+  -h, --help      Show this help message
 
 FIELDS:
   status        Ticket status (e.g., "In Progress")
   assignee      Assignee email
   priority      Priority name (e.g., "High")
   labels        Add (+label) or remove (-label)
+  summary       Short title/summary line
+  description   Full description body (supports --file for multi-line)
 
 EXAMPLES:
   jira edit abc123 status "In Progress"
@@ -28,6 +34,9 @@ EXAMPLES:
   jira edit abc123 priority High
   jira edit abc123 labels +urgent
   jira edit abc123 labels -wontfix
+  jira edit abc123 summary "New summary text"
+  jira edit abc123 description "Short description inline"
+  jira edit abc123 description --file ./description.md
 `;
 
 /**
@@ -45,18 +54,37 @@ export async function runEdit(args) {
   const { values, positionals } = parseArgs({
     args,
     options: {
+      file: { type: 'string', short: 'f' },
       help: { type: 'boolean', short: 'h' },
     },
     allowPositionals: true,
   });
 
-  if (values.help || positionals.length < 3) {
+  if (values.help || positionals.length < 2) {
     console.log(HELP);
     return;
   }
 
   const [idInput, field, ...valueParts] = positionals;
-  const value = valueParts.join(' ');
+
+  // Resolve value: --file wins over inline positionals
+  let value;
+  if (values.file) {
+    let raw;
+    try {
+      raw = readFileSync(values.file, 'utf8');
+    } catch (err) {
+      throw new Error(`Could not read file "${values.file}": ${err.message}`);
+    }
+    // Auto-convert Markdown files to Jira Wiki Markup
+    value = values.file.endsWith('.md') ? convertMarkdownToJira(raw) : raw;
+  } else {
+    if (valueParts.length === 0) {
+      console.log(HELP);
+      return;
+    }
+    value = valueParts.join(' ');
+  }
 
   const resolved = resolveId(idInput);
   const ticket = readTicket(resolved.filePath);
