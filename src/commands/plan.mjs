@@ -151,20 +151,22 @@ function getFieldValue(ticket, field) {
     case 'labels':
       return (ticket.labels || []).join(', ') || 'None';
     default:
-      return ticket[field] || 'Unknown';
+      return formatValue(ticket[field] ?? 'Unknown');
   }
 }
 
 function formatValue(value) {
   if (Array.isArray(value)) {
-    // Handle array of objects (e.g., multiselect fields)
-    if (value.length > 0 && typeof value[0] === 'object') {
-      return JSON.stringify(value);
-    }
-    return value.join(', ');
+    return value.map(item => {
+      if (item !== null && typeof item === 'object') {
+        // Prefer human-readable fields in priority order
+        return item.name ?? item.displayName ?? item.value ?? item.key ?? JSON.stringify(item);
+      }
+      return String(item);
+    }).join(', ') || 'None';
   }
   if (typeof value === 'object' && value !== null) {
-    return JSON.stringify(value);
+    return value.name ?? value.displayName ?? value.value ?? value.key ?? JSON.stringify(value);
   }
   return String(value);
 }
