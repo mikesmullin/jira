@@ -9,7 +9,7 @@ import { readTicket, findChildrenByParentKey } from '../lib/storage.mjs';
 import { getChangelog } from '../lib/api.mjs';
 import { getHostNameFromUrl, getHierarchyFieldsForUrl } from '../lib/config.mjs';
 import { loadFieldCache } from '../lib/fields.mjs';
-import { pink, green, dim } from '../lib/colors.mjs';
+import { pink, green, dim, yellow, cyan, bold, violet, robinsEgg, salmon, ibmBlue } from '../lib/colors.mjs';
 
 const HELP = `
 jira view - View a ticket (diff by default, or --full)
@@ -149,81 +149,93 @@ function showRaw(ticket) {
 }
 
 function showFull(ticket) {
-  // Print formatted view
-  console.log(`# ${ticket.key}: ${ticket.summary}\n`);
-  console.log(`**Type:** ${ticket.issuetype?.name || 'Unknown'}`);
-  console.log(`**Status:** ${ticket.status?.name || 'Unknown'}`);
-  console.log(`**Priority:** ${ticket.priority?.name || 'None'}`);
-  console.log(`**Assignee:** ${ticket.assignee?.displayName || 'Unassigned'}`);
-  console.log(`**Reporter:** ${ticket.reporter?.displayName || 'Unknown'}`);
-  console.log(`**Project:** ${ticket.project?.name || ''} (${ticket.project?.key || ''})`);
+  // ─── Header ─────────────────────────────────────────────────────────
+  console.log(`${cyan(ticket.key)} ${dim('(' + ticket.id + ')')}  ${bold(ticket.summary)}`);
+  console.log(ibmBlue(ticket.webLink));
+  console.log('');
 
-  // Standard optional fields
+  // ─── Core metadata ───────────────────────────────────────────────────
+  const coreRows = [
+    [dim('Type'),      fmtObj(ticket.issuetype, 'name', 'id')],
+    [dim('Status'),    fmtObj(ticket.status, 'name', 'id')],
+    [dim('Priority'),  fmtObj(ticket.priority, 'name', 'id')],
+    [dim('Assignee'),  fmtUser(ticket.assignee)],
+    [dim('Reporter'),  fmtUser(ticket.reporter)],
+    [dim('Project'),   fmtObj(ticket.project, 'name', 'key')],
+  ];
   if (ticket.labels?.length) {
-    console.log(`**Labels:** ${ticket.labels.join(', ')}`);
+    coreRows.push([dim('Labels'), ticket.labels.map(l => salmon(l)).join(dim(', '))]);
   }
   if (ticket.components?.length) {
-    const names = ticket.components.map(c => c.name ?? c).join(', ');
-    console.log(`**Components:** ${names}`);
+    coreRows.push([dim('Components'), ticket.components.map(c => yellow(c.name ?? c)).join(dim(', '))]);
   }
   if (ticket.fixVersions?.length) {
-    const names = ticket.fixVersions.map(v => v.name ?? v).join(', ');
-    console.log(`**Fix Versions:** ${names}`);
+    coreRows.push([dim('Fix Versions'), ticket.fixVersions.map(v => v.name ?? v).join(dim(', '))]);
   }
   if (ticket.duedate) {
-    console.log(`**Due Date:** ${ticket.duedate}`);
+    coreRows.push([dim('Due Date'), robinsEgg(ticket.duedate)]);
   }
+  coreRows.push([dim('Created'), robinsEgg(ticket.created?.split('T')[0] || '')]);
+  coreRows.push([dim('Updated'), robinsEgg(ticket.updated?.split('T')[0] || '')]);
+  printTable(coreRows);
 
-  // Custom fields — resolve names from field cache when possible
+  // ─── Custom fields ───────────────────────────────────────────────────
   if (ticket.custom_fields && Object.keys(ticket.custom_fields).length > 0) {
     let fieldCache = null;
     try {
       const hostName = getHostNameFromUrl(ticket.host);
       fieldCache = loadFieldCache(hostName);
-    } catch {
-      // Host not found in config — display raw IDs
-    }
+    } catch { /* host not in config — fall back to raw IDs */ }
 
-    const customLines = [];
+    const customRows = [];
     for (const [fieldId, value] of Object.entries(ticket.custom_fields)) {
-      if (value === null || value === undefined) continue;
-      const fieldMeta = fieldCache?.fields?.[fieldId];
-      const label = fieldMeta?.name || fieldId;
-      customLines.push([label, formatCustomFieldDisplay(value)]);
+      const display = formatCustomFieldDisplay(value);
+      if (!display) continue;
+      const meta = fieldCache?.fields?.[fieldId];
+      const sortKey = (meta?.name || fieldId).toLowerCase();
+      const label = meta?.name
+        ? `${dim(meta.name)}  ${dim('(' + fieldId + ')')}`
+        : dim(fieldId);
+      customRows.push([label, display, sortKey]);
     }
-    // Sort by label so output is stable
-    customLines.sort((a, b) => a[0].localeCompare(b[0]));
-    for (const [label, display] of customLines) {
-      if (display) console.log(`**${label}:** ${display}`);
+    customRows.sort((a, b) => a[2].localeCompare(b[2]));
+
+    if (customRows.length > 0) {
+      console.log('\n' + sectionHeader('Custom Fields'));
+      printTable(customRows.map(([l, v]) => [l, v]));
     }
   }
 
-  console.log(`**Created:** ${ticket.created?.split('T')[0] || ''}`);
-  console.log(`**Updated:** ${ticket.updated?.split('T')[0] || ''}`);
-  console.log(`**Link:** ${ticket.webLink}`);
-  console.log('\n---\n');
-  console.log('## Description\n');
-  console.log(ticket.description || '_No description provided._');
+  // ─── Description ────────────────────────────────────────────────────
+  console.log('\n' + sectionHeader('Description'));
+  console.log(ticket.description || dim('(no description)'));
 
-  // Show comments if any
-  if (ticket._comments && ticket._comments.length > 0) {
-    console.log('\n---\n');
-    console.log(`## Comments (${ticket._comments.length})\n`);
+  // ─── Comments ────────────────────────────────────────────────────────
+  if (ticket._comments?.length) {
+    console.log('\n' + sectionHeader(`Comments (${ticket._comments.length})`));
     for (const comment of ticket._comments) {
       const author = comment.author?.displayName || 'Unknown';
+      const id = comment.author?.emailAddress || comment.author?.name || '';
       const date = comment.created?.split('T')[0] || '';
       const time = comment.created?.split('T')[1]?.split('.')[0] || '';
-      console.log(`### ${author} — ${date} ${time}\n`);
-      console.log(comment.body || '_No content_');
-      console.log('');
+      const authorStr = id ? `${violet(author)} ${violet('(' + id + ')')}` : violet(author);
+      console.log(`\n  ${authorStr}  ${robinsEgg(date + (time ? ' ' + time : ''))}`);
+      const body = (comment.body || dim('(no content)'));
+      console.log(body.split('\n').map(l => '  ' + l).join('\n'));
     }
   }
 
-  // Show pending changes if any
-  if (ticket.offline?.pending) {
-    console.log('\n---\n');
-    console.log('## Pending Changes (not yet applied)\n');
-    console.log(yaml.dump(ticket.offline.pending, { lineWidth: -1 }));
+  // ─── Pending changes ─────────────────────────────────────────────────
+  if (ticket.offline?.pending && Object.keys(ticket.offline.pending).length > 0) {
+    console.log('\n' + sectionHeader('Pending Changes'));
+    const pendRows = [];
+    for (const [k, v] of Object.entries(ticket.offline.pending)) {
+      const display = typeof v === 'string' ? v
+        : Array.isArray(v) ? v.join(', ')
+        : JSON.stringify(v);
+      pendRows.push([dim(k), yellow(display)]);
+    }
+    printTable(pendRows);
   }
 }
 
@@ -231,7 +243,9 @@ function showDiff(ticket) {
   const offline = ticket.offline || {};
   const previous = offline.previous;
 
-  console.log(`# ${ticket.key}: ${ticket.summary}\n`);
+  console.log(`${cyan(ticket.key)} ${dim('(' + ticket.id + ')')}  ${bold(ticket.summary)}`);
+  console.log(ibmBlue(ticket.webLink));
+  console.log('');
 
   if (!previous) {
     // Never read before - show as new
@@ -507,9 +521,64 @@ async function showChangesSince(ticket, sinceDate) {
   console.log(`Link: ${ticket.webLink}`);
 }
 
+// ─── Layout helpers ─────────────────────────────────────────────────────────
+
+/** Strip ANSI escape codes for visual-width calculations. */
+function stripAnsi(str) {
+  return str.replace(/\x1b\[[^m]*m/g, '');
+}
+
+/** Yellow section divider: ── Title ──────────────────── */
+function sectionHeader(title) {
+  const prefix = `── ${title} `;
+  const pad = '─'.repeat(Math.max(2, 60 - prefix.length));
+  return yellow(prefix + pad);
+}
+
+/**
+ * Print an aligned two-column table.
+ * Labels may contain ANSI codes; width is computed from stripped text.
+ */
+function printTable(rows, indent = '  ') {
+  const maxW = rows.reduce((m, [label]) => Math.max(m, stripAnsi(label).length), 0);
+  for (const [label, value] of rows) {
+    const pad = ' '.repeat(maxW - stripAnsi(label).length + 2);
+    console.log(`${indent}${label}${pad}${value}`);
+  }
+}
+
+/** Format a Jira object field as  "Human Name  (machine-id)" */
+function fmtObj(obj, nameKey, idKey) {
+  if (!obj) return dim('—');
+  const name = obj[nameKey] ?? '—';
+  const id   = idKey ? (obj[idKey] ?? '') : '';
+  return id ? `${name}  ${dim('(' + id + ')')}` : name;
+}
+
+/** Format a Jira user as "Display Name (email)" in violet — human and machine parts share the same color. */
+function fmtUser(user) {
+  if (!user) return dim('Unassigned');
+  const name = user.displayName || user.name || 'Unknown';
+  const id   = user.emailAddress || user.name || '';
+  return id ? `${violet(name)} ${violet('(' + id + ')')}` : violet(name);
+}
+
+// ─── Custom field value formatter ────────────────────────────────────────────
+
+/**
+ * Colorize embedded Jira user references of the form "identifier(JIRAUSERxxxxx)".
+ * Applies violet to both the human part and the parenthesised machine ID,
+ * inserting a space before the opening paren so they read clearly.
+ */
+function colorizeUserRefs(str) {
+  return str.replace(/([^\s(,]+)\(JIRAUSER(\d+)\)/g, (_, human, uid) =>
+    `${violet(human)} ${violet('(JIRAUSER' + uid + ')')}`
+  );
+}
+
 /**
  * Format a stored custom field value for human-readable display.
- * Returns a string, or null/empty string to skip the field.
+ * Returns a string, or null to skip the field entirely.
  */
 function formatCustomFieldDisplay(value) {
   if (value === null || value === undefined) return null;
@@ -528,5 +597,10 @@ function formatCustomFieldDisplay(value) {
   if (/^\d{10,}$/.test(str)) return null;
   // Truncate very long strings (Java toString blobs, HTML, etc.)
   if (str.length > 200) return str.substring(0, 197) + '…';
-  return str;
+  // URLs
+  if (/^https?:\/\//.test(str)) return ibmBlue(str);
+  // ISO date / datetime strings
+  if (/^\d{4}-\d{2}-\d{2}(T[\d:.]+Z?)?$/.test(str)) return robinsEgg(str);
+  // Colorize embedded user refs: "name(JIRAUSERxxxxx)" → violet
+  return colorizeUserRefs(str);
 }

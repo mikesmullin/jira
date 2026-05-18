@@ -21,6 +21,21 @@ const YELLOW = '\x1b[38;2;255;209;102m';
 // Cyan for info
 const CYAN = '\x1b[38;2;102;217;239m';
 
+// Violet/lavender for user/person values
+const VIOLET = '\x1b[38;2;190;145;255m';
+
+// Robin's egg blue for dates and times
+const ROBINS_EGG = '\x1b[38;2;100;215;205m';
+
+// Salmon pink for labels
+const SALMON = '\x1b[38;2;250;128;114m';
+
+// IBM Blue for URLs
+const IBM_BLUE = '\x1b[38;2;69;137;255m';
+
+// Bold
+const BOLD = '\x1b[1m';
+
 // Reset to default
 const RESET = '\x1b[0m';
 
@@ -57,6 +72,41 @@ export function yellow(text) {
  */
 export function cyan(text) {
   return `${CYAN}${text}${RESET}`;
+}
+
+/**
+ * Bold text
+ */
+export function bold(text) {
+  return `${BOLD}${text}${RESET}`;
+}
+
+/**
+ * Violet/lavender for user/person values
+ */
+export function violet(text) {
+  return `${VIOLET}${text}${RESET}`;
+}
+
+/**
+ * Robin's egg blue for dates and times
+ */
+export function robinsEgg(text) {
+  return `${ROBINS_EGG}${text}${RESET}`;
+}
+
+/**
+ * Salmon pink for labels
+ */
+export function salmon(text) {
+  return `${SALMON}${text}${RESET}`;
+}
+
+/**
+ * IBM Blue for URLs/links
+ */
+export function ibmBlue(text) {
+  return `${IBM_BLUE}${text}${RESET}`;
 }
 
 /**
