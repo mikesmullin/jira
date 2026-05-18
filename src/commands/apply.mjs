@@ -10,6 +10,7 @@ import { readTicket, clearPending, saveIssue } from '../lib/storage.mjs';
 import { updateIssue, addComment, getIssue, getTransitions, doTransition, deleteIssue, createLink, deleteLink, getIssueLinks } from '../lib/api.mjs';
 import { getHostConfig, loadConfig } from '../lib/config.mjs';
 import { mapFieldForJira } from '../lib/field-map.mjs';
+import { loadFieldCache } from '../lib/fields.mjs';
 
 const HELP = `
 jira apply - Apply pending changes to remote Jira
@@ -128,7 +129,10 @@ async function applyTicketChanges(ticketInfo) {
       await applyStatusChange(hostName, ticket.key, value);
     } else {
       const mapped = await mapFieldForJira(hostName, field, value);
-      fieldUpdates[mapped.field] = formatFieldValue(mapped.field, mapped.value);
+      // Pass the original stored field value as a type hint so formatFieldValue
+      // can mirror the Jira API shape (e.g. {name:...} vs [{name:...}]).
+      const originalValue = ticket[field] ?? ticket[mapped.field];
+      fieldUpdates[mapped.field] = formatFieldValue(mapped.field, mapped.value, originalValue, hostName);
     }
   }
 
@@ -191,7 +195,7 @@ async function applyStatusChange(hostName, issueKey, targetStatus) {
   console.log(`  ✓ Transitioned to: ${target.to?.name || targetStatus}`);
 }
 
-function formatFieldValue(field, value) {
+function formatFieldValue(field, value, originalValue, hostName) {
   switch (field) {
     case 'assignee':
       return { name: value };
@@ -199,8 +203,50 @@ function formatFieldValue(field, value) {
       return { name: value };
     case 'labels':
       return value;
-    default:
+    default: {
+      // Use the shape of the existing stored value as a type hint.
+      //
+      // If the original is an array of objects (e.g. components, fix versions),
+      // treat the incoming string as a comma-separated list of names.
+      if (Array.isArray(originalValue) && originalValue.length > 0 && typeof originalValue[0] === 'object') {
+        const names = Array.isArray(value)
+          ? value
+          : String(value).split(',').map(s => s.trim()).filter(Boolean);
+        return names.map(n => ({ name: n }));
+      }
+      // If the original is a plain object with a 'name' key (e.g. group picker,
+      // single-select), wrap the string as {name: value}.
+      if (originalValue !== null && typeof originalValue === 'object' && !Array.isArray(originalValue) && 'name' in originalValue) {
+        return { name: value };
+      }
+      // Original value missing (field was empty on ticket) — fall back to the
+      // field cache schema type to decide the correct API shape.
+      if ((originalValue === null || originalValue === undefined) && hostName) {
+        const cache = loadFieldCache(hostName);
+        const schema = cache?.fields?.[field]?.schema;
+        if (schema) {
+          const schemaType = schema.type;
+          // Group picker → {name: "..."}          
+          if (schemaType === 'group') {
+            return { name: value };
+          }
+          // User picker → {name: "..."}
+          if (schemaType === 'user') {
+            return { name: value };
+          }
+          // Array types (multiselect, labels, versions, components) → [{name:"..."}]
+          if (schemaType === 'array') {
+            const names = Array.isArray(value)
+              ? value
+              : String(value).split(',').map(s => s.trim()).filter(Boolean);
+            const itemType = schema.items;
+            if (itemType === 'string') return names;
+            return names.map(n => ({ name: n }));
+          }
+        }
+      }
       return value;
+    }
   }
 }
 

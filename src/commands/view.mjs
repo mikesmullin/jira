@@ -8,6 +8,7 @@ import { resolveId } from '../lib/id.mjs';
 import { readTicket, findChildrenByParentKey } from '../lib/storage.mjs';
 import { getChangelog } from '../lib/api.mjs';
 import { getHostNameFromUrl, getHierarchyFieldsForUrl } from '../lib/config.mjs';
+import { loadFieldCache } from '../lib/fields.mjs';
 import { pink, green, dim } from '../lib/colors.mjs';
 
 const HELP = `
@@ -150,11 +151,53 @@ function showRaw(ticket) {
 function showFull(ticket) {
   // Print formatted view
   console.log(`# ${ticket.key}: ${ticket.summary}\n`);
+  console.log(`**Type:** ${ticket.issuetype?.name || 'Unknown'}`);
   console.log(`**Status:** ${ticket.status?.name || 'Unknown'}`);
   console.log(`**Priority:** ${ticket.priority?.name || 'None'}`);
   console.log(`**Assignee:** ${ticket.assignee?.displayName || 'Unassigned'}`);
   console.log(`**Reporter:** ${ticket.reporter?.displayName || 'Unknown'}`);
   console.log(`**Project:** ${ticket.project?.name || ''} (${ticket.project?.key || ''})`);
+
+  // Standard optional fields
+  if (ticket.labels?.length) {
+    console.log(`**Labels:** ${ticket.labels.join(', ')}`);
+  }
+  if (ticket.components?.length) {
+    const names = ticket.components.map(c => c.name ?? c).join(', ');
+    console.log(`**Components:** ${names}`);
+  }
+  if (ticket.fixVersions?.length) {
+    const names = ticket.fixVersions.map(v => v.name ?? v).join(', ');
+    console.log(`**Fix Versions:** ${names}`);
+  }
+  if (ticket.duedate) {
+    console.log(`**Due Date:** ${ticket.duedate}`);
+  }
+
+  // Custom fields — resolve names from field cache when possible
+  if (ticket.custom_fields && Object.keys(ticket.custom_fields).length > 0) {
+    let fieldCache = null;
+    try {
+      const hostName = getHostNameFromUrl(ticket.host);
+      fieldCache = loadFieldCache(hostName);
+    } catch {
+      // Host not found in config — display raw IDs
+    }
+
+    const customLines = [];
+    for (const [fieldId, value] of Object.entries(ticket.custom_fields)) {
+      if (value === null || value === undefined) continue;
+      const fieldMeta = fieldCache?.fields?.[fieldId];
+      const label = fieldMeta?.name || fieldId;
+      customLines.push([label, formatCustomFieldDisplay(value)]);
+    }
+    // Sort by label so output is stable
+    customLines.sort((a, b) => a[0].localeCompare(b[0]));
+    for (const [label, display] of customLines) {
+      if (display) console.log(`**${label}:** ${display}`);
+    }
+  }
+
   console.log(`**Created:** ${ticket.created?.split('T')[0] || ''}`);
   console.log(`**Updated:** ${ticket.updated?.split('T')[0] || ''}`);
   console.log(`**Link:** ${ticket.webLink}`);
@@ -462,4 +505,28 @@ async function showChangesSince(ticket, sinceDate) {
 
   console.log('─'.repeat(60));
   console.log(`Link: ${ticket.webLink}`);
+}
+
+/**
+ * Format a stored custom field value for human-readable display.
+ * Returns a string, or null/empty string to skip the field.
+ */
+function formatCustomFieldDisplay(value) {
+  if (value === null || value === undefined) return null;
+  if (Array.isArray(value)) {
+    const parts = value.map(formatCustomFieldDisplay).filter(Boolean);
+    return parts.join(', ') || null;
+  }
+  if (typeof value === 'object') {
+    // Prefer human-readable properties in priority order
+    return value.displayName ?? value.name ?? value.value ?? value.key ?? JSON.stringify(value);
+  }
+  const str = String(value);
+  // Skip Jira rank/lexorank sentinel strings: e.g. "1|i1ve7b:" or "2|i1thv4:"
+  if (/^\d\|[a-z0-9]+:$/.test(str)) return null;
+  // Skip huge ints used as internal rank sentinels (e.g. 9223372036854775807)
+  if (/^\d{10,}$/.test(str)) return null;
+  // Truncate very long strings (Java toString blobs, HTML, etc.)
+  if (str.length > 200) return str.substring(0, 197) + '…';
+  return str;
 }
