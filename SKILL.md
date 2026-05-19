@@ -22,9 +22,9 @@ The Jira CLI follows the pattern of an offline-first architecture with local Mar
 | `open <id>` | Open in VS Code | `jira open --help` |
 | `visit <id>` | Open in browser | `jira visit --help` |
 | `edit <id> <field> <value>` | Queue field changes (`status`, `assignee`, `priority`, `labels`, `summary`, `description`) | `jira edit --help` |
-| `edit <id> <field> --file <path>` | Queue field value read from file (`.md` auto-converted to Jira markup) | `jira edit --help` |
+| `edit <id> <field> --file <path>` | Queue field value read from file (`.md` auto-converted to Jira markup; `.jira` passed through as-is) | `jira edit --help` |
 | `comment <id> <message>` | Queue a comment inline | `jira comment --help` |
-| `comment <id> --file <path>` | Queue a comment from file (`.md` auto-converted to Jira markup) | `jira comment --help` |
+| `comment <id> --file <path>` | Queue a comment from file (`.md` auto-converted to Jira markup; `.jira` passed through as-is) | `jira comment --help` |
 | `link <id1> <id2>` | Link two tickets | `jira link --help` |
 | `delete <id>` | Soft-delete (or `--clear` to undo) | `jira delete --help` |
 | `plan` | Preview pending changes | `jira plan --help` |

@@ -17,7 +17,7 @@ USAGE:
   jira edit <id> <field> --file <path>
 
 OPTIONS:
-  --file <path>   Read field value from file (auto-converts .md to Jira markup)
+  --file <path>   Read field value from file (.md auto-converts to Jira markup, .jira passed through as-is)
   -h, --help      Show this help message
 
 FIELDS:
@@ -37,6 +37,7 @@ EXAMPLES:
   jira edit abc123 summary "New summary text"
   jira edit abc123 description "Short description inline"
   jira edit abc123 description --file ./description.md
+  jira edit abc123 description --file ./description.jira
 `;
 
 /**
@@ -76,7 +77,7 @@ export async function runEdit(args) {
     } catch (err) {
       throw new Error(`Could not read file "${values.file}": ${err.message}`);
     }
-    // Auto-convert Markdown files to Jira Wiki Markup
+    // Auto-convert Markdown files to Jira Wiki Markup (.jira files are passed through as-is)
     value = values.file.endsWith('.md') ? convertMarkdownToJira(raw) : raw;
   } else {
     if (valueParts.length === 0) {

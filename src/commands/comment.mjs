@@ -17,13 +17,14 @@ USAGE:
   jira comment <id> --file <path>
 
 OPTIONS:
-  --file <path>   Read comment body from file (auto-converts .md to Jira markup)
+  --file <path>   Read comment body from file (.md auto-converts to Jira markup, .jira passed through as-is)
   -h, --help      Show this help message
 
 EXAMPLES:
   jira comment abc123 "Working on this now"
   jira comment SRE-12345 "Blocked on upstream dependency"
   jira comment SRE-12345 --file tmp/csat-comment.md
+  jira comment SRE-12345 --file tmp/csat-comment.jira
 `;
 
 export async function runComment(args) {
@@ -51,7 +52,7 @@ export async function runComment(args) {
     } catch (err) {
       throw new Error(`Could not read file "${values.file}": ${err.message}`);
     }
-    message = values.file.endsWith('.md') ? convertMarkdownToJira(raw) : raw;
+    message = values.file.endsWith('.md') ? convertMarkdownToJira(raw) : raw;  // .jira files pass through as-is
   } else {
     message = messageParts.join(' ');
   }
