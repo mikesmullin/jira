@@ -23,7 +23,8 @@ The Jira CLI follows the pattern of an offline-first architecture with local Mar
 | `visit <id>` | Open in browser | `jira visit --help` |
 | `edit <id> <field> <value>` | Queue field changes (`status`, `assignee`, `priority`, `labels`, `summary`, `description`) | `jira edit --help` |
 | `edit <id> <field> --file <path>` | Queue field value read from file (`.md` auto-converted to Jira markup) | `jira edit --help` |
-| `comment <id>` | Queue a comment | `jira comment --help` |
+| `comment <id> <message>` | Queue a comment inline | `jira comment --help` |
+| `comment <id> --file <path>` | Queue a comment from file (`.md` auto-converted to Jira markup) | `jira comment --help` |
 | `link <id1> <id2>` | Link two tickets | `jira link --help` |
 | `delete <id>` | Soft-delete (or `--clear` to undo) | `jira delete --help` |
 | `plan` | Preview pending changes | `jira plan --help` |
@@ -52,6 +53,7 @@ jira edit abc123 status "In Progress"  # Queued locally
 jira edit abc123 summary "New title"   # Queued locally
 jira edit abc123 description --file ./desc.md  # Queued locally (auto-converted from Markdown)
 jira comment abc123 "Working on it"    # Queued locally
+jira comment abc123 --file ./note.md   # Queued locally (auto-converted from Markdown)
 jira plan                              # Preview diff
 jira apply                             # Push to remote
 ```

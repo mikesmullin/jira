@@ -3,8 +3,10 @@
  */
 
 import { parseArgs } from 'util';
+import { readFileSync } from 'fs';
 import { resolveId } from '../lib/id.mjs';
 import { queueComment, readTicket } from '../lib/storage.mjs';
+import { convertMarkdownToJira } from './markdown.mjs';
 import { green, cyan, dim } from '../lib/colors.mjs';
 
 const HELP = `
@@ -12,31 +14,47 @@ jira comment - Queue a comment (stored in offline.pending until apply)
 
 USAGE:
   jira comment <id> <message>
+  jira comment <id> --file <path>
 
 OPTIONS:
-  -h, --help    Show this help message
+  --file <path>   Read comment body from file (auto-converts .md to Jira markup)
+  -h, --help      Show this help message
 
 EXAMPLES:
   jira comment abc123 "Working on this now"
   jira comment SRE-12345 "Blocked on upstream dependency"
+  jira comment SRE-12345 --file tmp/csat-comment.md
 `;
 
 export async function runComment(args) {
   const { values, positionals } = parseArgs({
     args,
     options: {
+      file: { type: 'string', short: 'f' },
       help: { type: 'boolean', short: 'h' },
     },
     allowPositionals: true,
   });
 
-  if (values.help || positionals.length < 2) {
+  if (values.help || (positionals.length < 2 && !values.file)) {
     console.log(HELP);
     return;
   }
 
   const [idInput, ...messageParts] = positionals;
-  const message = messageParts.join(' ');
+
+  let message;
+  if (values.file) {
+    let raw;
+    try {
+      raw = readFileSync(values.file, 'utf8');
+    } catch (err) {
+      throw new Error(`Could not read file "${values.file}": ${err.message}`);
+    }
+    message = values.file.endsWith('.md') ? convertMarkdownToJira(raw) : raw;
+  } else {
+    message = messageParts.join(' ');
+  }
 
   const resolved = resolveId(idInput);
   const ticket = readTicket(resolved.filePath);
