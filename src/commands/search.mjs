@@ -94,13 +94,13 @@ function formatIssueForYaml(issue) {
 function printTable(issues) {
   // Header
   console.log('KEY           STATUS          ASSIGNEE                SUMMARY');
-  console.log('─'.repeat(80));
+  console.log('─'.repeat(120));
 
   for (const issue of issues) {
     const key = (issue.key || '').padEnd(12);
     const status = (issue.fields?.status?.name || '').padEnd(14);
     const assignee = (issue.fields?.assignee?.displayName || 'Unassigned').padEnd(22);
-    const summary = (issue.fields?.summary || '').substring(0, 30);
+    const summary = issue.fields?.summary || '';
 
     console.log(`${key}  ${status}  ${assignee}  ${summary}`);
   }
