@@ -224,6 +224,17 @@ export function saveIssue(issue, hostUrl, options = {}) {
     }));
   }
 
+  // Add worklogs if provided (preserves all entries; view filters by date)
+  if (options.worklogs && options.worklogs.length > 0) {
+    data._worklogs = options.worklogs.map(w => ({
+      id: w.id || null,
+      author: w.author?.displayName || w.author?.name || null,
+      started: w.started || null,
+      seconds: w.timeSpentSeconds || 0,
+      comment: w.comment || null,
+    }));
+  }
+
   // Preserve and update offline section
   data.offline = {
     ...existingOffline,

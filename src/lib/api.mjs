@@ -209,6 +209,11 @@ export async function getComments(hostName, issueKey) {
   return result.comments || [];
 }
 
+export async function getWorklogs(hostName, issueKey) {
+  const result = await get(hostName, `/issue/${issueKey}/worklog`);
+  return result.worklogs || [];
+}
+
 /**
  * Get all fields (for custom field mapping)
  */

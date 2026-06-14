@@ -8,7 +8,7 @@ import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { join } from 'path';
 import yaml from 'js-yaml';
 import { loadConfig, getHostConfig, getCacheDir } from '../lib/config.mjs';
-import { searchAll, getComments, getChangelog, getIssue, getIssueUpdated, search } from '../lib/api.mjs';
+import { searchAll, getComments, getChangelog, getIssue, getIssueUpdated, search, getWorklogs } from '../lib/api.mjs';
 import { readTicket } from '../lib/storage.mjs';
 import { saveIssue, ensureStorageDirs } from '../lib/storage.mjs';
 import { resolveId } from '../lib/id.mjs';
@@ -324,8 +324,16 @@ async function pullSingleTicket(id, explicitHost, config, forceFull = false) {
     console.log(`   ⚠ Could not fetch changelog for ${resolvedKey}`);
   }
 
+  // Fetch worklogs (for time-log memos)
+  let worklogs = [];
+  try {
+    worklogs = await getWorklogs(targetHost, resolvedKey);
+  } catch {
+    console.log(`   ⚠ Could not fetch worklogs for ${resolvedKey}`);
+  }
+
   // Save to local storage
-  saveIssue(issue, hostConfig.url, { comments, changelog });
+  saveIssue(issue, hostConfig.url, { comments, changelog, worklogs });
 
   const commentCount = comments.length > 0 ? ` (${comments.length} comments)` : '';
   console.log(
@@ -440,7 +448,16 @@ async function pullFromHost(hostName, config, forceFull) {
           console.log(`   ⚠ Could not fetch changelog for ${issue.key}`);
         }
 
-        const result = saveIssue(issue, hostConfig.url, { comments, changelog });
+        // Fetch worklogs (for time-log memos)
+        let worklogs = [];
+        try {
+          worklogs = await getWorklogs(hostName, issue.key);
+        } catch (worklogErr) {
+          // Worklogs fetch failed, continue without them
+          console.log(`   ⚠ Could not fetch worklogs for ${issue.key}`);
+        }
+
+        const result = saveIssue(issue, hostConfig.url, { comments, changelog, worklogs });
         const commentCount = comments.length > 0 ? ` (${comments.length} comments)` : '';
         console.log(`   ✓ ${issue.key}: ${issue.fields?.summary?.substring(0, 50) || 'No summary'}...${commentCount}`);
         hostPulled++;

@@ -517,6 +517,23 @@ async function showChangesSince(ticket, sinceDate) {
     }
   }
 
+  // Show worklogs with memos logged in this window
+  const recentWorklogs = (ticket._worklogs || []).filter(w => {
+    if (!w.started) return false;
+    return new Date(w.started).getTime() >= sinceTimestamp;
+  });
+  if (recentWorklogs.length > 0) {
+    console.log('');
+    console.log(`**Worklogs (${recentWorklogs.length})**`);
+    for (const w of recentWorklogs) {
+      const author = w.author || 'Unknown';
+      const date = w.started?.split('T')[0] || '';
+      const hours = w.seconds ? (w.seconds / 3600).toFixed(1) : '?';
+      const memo = w.comment ? ` — ${w.comment.substring(0, 120)}${w.comment.length > 120 ? '...' : ''}` : '';
+      console.log(`  ${dim(`[${date}]`)} ${author}: ${hours}h${memo}`);
+    }
+  }
+
   console.log('─'.repeat(60));
   console.log(`Link: ${ticket.webLink}`);
 }
