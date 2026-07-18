@@ -2,6 +2,8 @@
 
 This document provides AI agents with an overview of the Jira CLI tool. For detailed usage, run `jira --help` or `jira <subcommand> --help`.
 
+**JQL syntax:** Write `field operator value`, combine clauses with `AND`/`OR`, negate with `NOT`, and group logic with parentheses: `project = OW AND status != Done`, `assignee = "person@example.com"`, or `text ~ "login failure" ORDER BY updated DESC`. Usernames must be email addresses, not bare usernames. Quote values containing spaces or special characters; use `=` for exact matches, `~` for text search, `IN (...)` for lists, and `IS EMPTY`/`IS NOT EMPTY` for missing values. Use JQL directly with `jira search <jql>`; `jira pull` also reads JQL from configured sync patterns. Field names and supported operators depend on Jira; discover valid fields with the CLI/help or Jira metadata. JQL searches are server-side, so unavailable fields, malformed clauses, or unsupported functions fail rather than partially matching.
+
 ## Overview
 
 The Jira CLI follows the pattern of an offline-first architecture with local Markdown (YAML frontmatter storage) flat-file database.
