@@ -57,17 +57,12 @@ export function loadConfig() {
  */
 export function loadTokens() {
   if (cachedTokens) return cachedTokens;
-
-  const tokensPath = join(ROOT_DIR, '.tokens.yaml');
-  if (!existsSync(tokensPath)) {
-    throw new Error(
-      `Tokens file not found: ${tokensPath}\n` +
-      `Copy .tokens.yaml.example to .tokens.yaml and add your PATs`
-    );
+  const token = process.env.JIRA_TOKEN;
+  if (!token) {
+    throw new Error('JIRA_TOKEN is required; launch through `op run --env-file=<(tokenman script jira) -- ...`');
   }
-
-  const content = readFileSync(tokensPath, 'utf8');
-  cachedTokens = yaml.load(content);
+  const host = loadConfig().default_host || 'blizzard';
+  cachedTokens = { hosts: { [host]: { token } } };
   return cachedTokens;
 }
 
