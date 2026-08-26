@@ -27,14 +27,12 @@ bun link
 
 ## Configuration
 
-1. Copy the tokens example file:
-```bash
-cp .tokens.yaml.example .tokens.yaml
-```
+1. Store each host Personal Access Token in the matching Tokenman Passman entry:
+  `jira-blizzard` or `jira-opscenter`.
 
-2. Add your Personal Access Tokens to `.tokens.yaml`
+2. Configure `PASSMAN_VAULT` and `PASSMAN_PASSWORD_FILE` for unattended use.
 
-3. Edit `config.yaml` to configure hosts and sync patterns
+3. Edit `config.yaml` to configure hosts and sync patterns.
 
 ## Usage
 

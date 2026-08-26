@@ -1,6 +1,6 @@
 /**
  * Configuration management for Jira CLI
- * Loads config.yaml and .tokens.yaml
+ * Loads config.yaml and the JIRA_TOKEN supplied by Tokenman.
  */
 
 import { readFileSync, existsSync } from 'fs';
@@ -53,13 +53,13 @@ export function loadConfig() {
 }
 
 /**
- * Load and parse .tokens.yaml
+ * Load the host token from the current process environment.
  */
 export function loadTokens() {
   if (cachedTokens) return cachedTokens;
   const token = process.env.JIRA_TOKEN;
   if (!token) {
-    throw new Error('JIRA_TOKEN is required; launch through `op run --env-file=<(tokenman script jira) -- ...`');
+    throw new Error('JIRA_TOKEN is required. Configure PASSMAN_VAULT so Jira can load its Tokenman provider.');
   }
   const host = loadConfig().default_host || 'blizzard';
   cachedTokens = { hosts: { [host]: { token } } };

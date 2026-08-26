@@ -25,6 +25,8 @@ import { runBatch } from './commands/batch.mjs';
 import { runClean } from './commands/clean.mjs';
 import { runDelete } from './commands/delete.mjs';
 import { runMarkdown } from './commands/markdown.mjs';
+import { getDefaultHost } from './lib/config.mjs';
+import { ensureValidProvider } from '../../agent/tmp/tokenman/src/tokenman.mjs';
 
 const HELP = `
 jira - Offline-first Jira CLI with local Markdown storage
@@ -61,6 +63,21 @@ Use "jira <command> --help" for more information about a command.
 
 const VERSION = '0.1.0';
 
+const ONLINE_COMMANDS = new Set(['pull', 'apply', 'search', 'field', 'batch']);
+
+function hostFromArgs(args) {
+  const index = args.indexOf('--host');
+  if (index >= 0 && args[index + 1]) return args[index + 1];
+  const inline = args.find((arg) => arg.startsWith('--host='));
+  return inline ? inline.slice('--host='.length) : getDefaultHost();
+}
+
+function providerForHost(host) {
+  if (host === 'blizzard') return 'jira-blizzard';
+  if (host === 'opscenter') return 'jira-opscenter';
+  throw new Error(`No Tokenman Jira provider configured for host: ${host}`);
+}
+
 async function main() {
   const args = process.argv.slice(2);
 
@@ -76,6 +93,10 @@ async function main() {
 
   const command = args[0];
   const commandArgs = args.slice(1);
+
+  if (ONLINE_COMMANDS.has(command)) {
+    await ensureValidProvider(providerForHost(hostFromArgs(commandArgs)));
+  }
 
   try {
     switch (command) {
