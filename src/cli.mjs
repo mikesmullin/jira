@@ -25,8 +25,12 @@ import { runBatch } from './commands/batch.mjs';
 import { runClean } from './commands/clean.mjs';
 import { runDelete } from './commands/delete.mjs';
 import { runMarkdown } from './commands/markdown.mjs';
-import { getDefaultHost } from './lib/config.mjs';
-import { ensureValidProvider } from '../../agent/tmp/tokenman/src/tokenman.mjs';
+import {
+  getDefaultHost,
+  getHostForTicketKey,
+  loadConfig,
+  loadCredentialsFromPassman,
+} from './lib/config.mjs';
 
 const HELP = `
 jira - Offline-first Jira CLI with local Markdown storage
@@ -65,17 +69,52 @@ const VERSION = '0.1.0';
 
 const ONLINE_COMMANDS = new Set(['pull', 'apply', 'search', 'field', 'batch']);
 
-function hostFromArgs(args) {
-  const index = args.indexOf('--host');
-  if (index >= 0 && args[index + 1]) return args[index + 1];
-  const inline = args.find((arg) => arg.startsWith('--host='));
-  return inline ? inline.slice('--host='.length) : getDefaultHost();
+function requestsHelp(args) {
+  return args.includes('--help') || args.includes('-h');
 }
 
-function providerForHost(host) {
-  if (host === 'blizzard') return 'jira-blizzard';
-  if (host === 'opscenter') return 'jira-opscenter';
-  throw new Error(`No Tokenman Jira provider configured for host: ${host}`);
+function hostFromArgs(args) {
+  const index = args.findIndex((arg) => arg === '--host' || arg === '-H');
+  if (index >= 0 && args[index + 1] && !args[index + 1].startsWith('-')) return args[index + 1];
+  const inline = args.find((arg) => arg.startsWith('--host=') || arg.startsWith('-H='));
+  return inline ? inline.slice(inline.indexOf('=') + 1) : null;
+}
+
+function pullTicketIds(args) {
+  const ids = [];
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (arg === '--host' || arg === '-H') {
+      index += 1;
+      continue;
+    }
+    if (arg.startsWith('--host=') || arg.startsWith('-H=') || arg.startsWith('-')) continue;
+    ids.push(arg);
+  }
+  return ids;
+}
+
+function credentialHostsFor(command, args) {
+  const explicitHost = hostFromArgs(args);
+  if (explicitHost) return explicitHost;
+
+  if (command === 'pull') {
+    const ticketIds = pullTicketIds(args);
+    if (ticketIds.length > 0) {
+      const mappedHosts = ticketIds.map((id) => getHostForTicketKey(id));
+      const inferredHosts = [...new Set(mappedHosts.filter(Boolean))];
+      if (mappedHosts.some((host) => !host)) inferredHosts.push(getDefaultHost());
+      if (inferredHosts.length > 0) return [...new Set(inferredHosts)];
+    } else {
+      const config = loadConfig();
+      return Object.keys(config.hosts || {}).filter((name) => config.hosts[name].sync?.length > 0);
+    }
+  }
+
+  // Commands without an explicit host use Jira's configured default, just as
+  // their command implementations do. This also enables the missing-token
+  // prompt for an unqualified ticket pull.
+  return getDefaultHost();
 }
 
 async function main() {
@@ -94,11 +133,14 @@ async function main() {
   const command = args[0];
   const commandArgs = args.slice(1);
 
-  if (ONLINE_COMMANDS.has(command)) {
-    await ensureValidProvider(providerForHost(hostFromArgs(commandArgs)));
-  }
-
   try {
+    if (ONLINE_COMMANDS.has(command) && !requestsHelp(commandArgs)) {
+      const requestedHosts = credentialHostsFor(command, commandArgs);
+      await loadCredentialsFromPassman(requestedHosts, {
+        promptForMissing: true,
+      });
+    }
+
     switch (command) {
       case 'pull':
         await runPull(commandArgs);

@@ -13,7 +13,8 @@ Offline-first Jira CLI with local Markdown storage.
 ## Prerequisites
 
 - [Bun](https://bun.sh/) runtime (v1.0+)
-- Personal Access Token (PAT) for each Jira host
+- Passman desktop with the vault unlocked and **Accessible for agents** enabled
+- Personal Access Token (PAT) for each Jira host, stored in Passman
 
 ## Installation
 
@@ -27,12 +28,29 @@ bun link
 
 ## Configuration
 
-1. Store each host Personal Access Token in the matching Tokenman Passman entry:
-  `jira-blizzard` or `jira-opscenter`.
+1. Open Passman, unlock the vault, and enable **Accessible for agents**.
+2. Store each host Personal Access Token in a protected `token` field on the
+   matching Passman entry (for example, `jira-acme`).
+3. Edit `config.yaml` to configure hosts, ticket prefixes, and sync patterns.
 
-2. Configure `PASSMAN_VAULT` and `PASSMAN_PASSWORD_FILE` for unattended use.
+For example, each host can claim project key prefixes:
 
-3. Edit `config.yaml` to configure hosts and sync patterns.
+```yaml
+hosts:
+  acme:
+    ticket_prefixes: [SRE]
+  goldman:
+    ticket_prefixes: [OPS]
+```
+
+A ticket such as `OPS-630818` is therefore routed to `goldman` before Jira
+credentials are loaded. The CLI imports Passman’s Bun library (`openVault` and `readFields`) and talks to
+Passman’s local agent socket. It never reads the KDBX file or handles the vault
+password. `JIRA_TOKEN` (or `JIRA_TOKEN_<HOST>`) remains available as an explicit
+process-environment override for noninteractive scripts and CI. For an online
+command, Passman is authoritative for the applicable host: a missing token
+triggers a hidden prompt, and the entered token is written back to that host's
+protected Passman entry.
 
 ## Usage
 

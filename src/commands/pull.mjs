@@ -7,7 +7,7 @@ import { parseArgs } from 'util';
 import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { join } from 'path';
 import yaml from 'js-yaml';
-import { loadConfig, getHostConfig, getCacheDir } from '../lib/config.mjs';
+import { loadConfig, getHostConfig, getCacheDir, getHostForTicketKey } from '../lib/config.mjs';
 import { searchAll, getComments, getChangelog, getIssue, getIssueUpdated, search, getWorklogs } from '../lib/api.mjs';
 import { readTicket } from '../lib/storage.mjs';
 import { saveIssue, ensureStorageDirs } from '../lib/storage.mjs';
@@ -42,6 +42,8 @@ BEHAVIOR:
   - Preserves the offline: key (pending edits, last_read, etc.)
   - Pending changes are never lost
   - Tickets with pending local changes are always pulled (to detect conflicts)
+  - When the applicable host's Passman token is missing, prompts for the token
+    without echoing it and saves it as a protected Passman field
 
 EXAMPLES:
   jira pull                       # Pull from all hosts (incremental)
@@ -180,18 +182,21 @@ async function findAllDescendants(rootKeys, explicitHost, config) {
   // Normalize to Jira keys
   const normalizedKeys = rootKeys.map(k => k.toUpperCase());
   
-  // Determine host (use first key to figure it out)
+  // Determine host from the explicit flag, then the configured ticket-prefix
+  // map, and finally the default host.
   let targetHost = explicitHost;
   if (!targetHost) {
-    if (config.default_host) {
-      targetHost = config.default_host;
-    } else {
+    const inferredHosts = [...new Set(
+      rootKeys.map((key) => getHostForTicketKey(key)).filter(Boolean),
+    )];
+    if (inferredHosts.length > 1) {
+      throw new Error(`Ticket keys map to multiple hosts (${inferredHosts.join(', ')}); use --host flag`);
+    }
+    targetHost = inferredHosts[0] || config.default_host;
+    if (!targetHost) {
       const hosts = Object.keys(config.hosts);
-      if (hosts.length === 1) {
-        targetHost = hosts[0];
-      } else {
-        throw new Error(`Multiple hosts configured - use --host flag to specify which one`);
-      }
+      if (hosts.length === 1) targetHost = hosts[0];
+      else throw new Error(`Multiple hosts configured - use --host flag to specify which one`);
     }
   }
 
@@ -261,7 +266,10 @@ async function pullSingleTicket(id, explicitHost, config, forceFull = false) {
     }
   }
 
-  // Determine which host to use
+  // Determine which host to use. New Jira keys can be routed from the
+  // configured ticket_prefixes map before falling back to default_host.
+  if (!targetHost && ticketKey) targetHost = getHostForTicketKey(ticketKey);
+
   if (!targetHost) {
     // Try to find host from existing local ticket
     if (!isJiraKey) {

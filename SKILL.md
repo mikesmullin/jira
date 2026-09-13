@@ -80,16 +80,24 @@ Configuration files are YAML-based. See the `.example` files for full schema doc
 | File | Purpose | Example |
 |------|---------|---------|
 | `config.yaml` | Hosts and sync patterns | [config.yaml.example](config.yaml.example) |
-| `.tokens.yaml` | Authentication (gitignored) | [.tokens.yaml.example](.tokens.yaml.example) |
+| Passman `jira-<host>` entries | Protected Jira PATs | [.tokens.yaml.example](.tokens.yaml.example) |
 | `*.yaml` (batch) | Bulk ticket creation | [batch.yaml.example](batch.yaml.example) |
 
 ### Quick Setup
 
 ```bash
 cp config.yaml.example config.yaml      # Edit hosts and sync patterns
-cp .tokens.yaml.example .tokens.yaml    # Add your PAT tokens
+# In Passman, create jira-<host> entries with protected `token` fields
 jira field sync --host company         # Cache custom field IDs
 ```
+
+Passman must be open with the vault unlocked and **Accessible for agents**
+enabled. Jira imports Passman’s `openVault`/`readFields` library interface and
+never reads the vault file directly. Configure per-host `ticket_prefixes` in
+`config.yaml` (for example, `OPS` under `goldman`) so ticket pulls select the
+correct host before authentication. For online commands, a missing
+`jira-<host>` token is requested through a hidden stdin prompt and then stored
+as a protected Passman field.
 
 ## Storage Format
 

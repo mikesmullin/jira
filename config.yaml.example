@@ -45,6 +45,15 @@ hosts:
 
   # Primary Jira instance
   company:
+    # The protected PAT is read from Passman entry `jira-company`, field `token`.
+    # Override the entry title with `passman_entry` if needed.
+    # passman_entry: jira-company
+
+    # Jira project key prefixes served by this host. Ticket pulls use this
+    # mapping before falling back to default_host.
+    ticket_prefixes:
+      - SRE
+
     # Base URL of the Jira instance (no trailing slash)
     url: https://jira.atlassian.company.com
     

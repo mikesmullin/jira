@@ -663,6 +663,8 @@ hosts:
   company:
     url: https://jira.atlassian.company.com
     api: /rest/api/2
+    # Ticket keys with these prefixes are routed to this host.
+    ticket_prefixes: [SRE]
     # Sync patterns: hierarchical filter for what to pull
     sync:
       # Pattern 1: All my assigned tickets
@@ -679,24 +681,23 @@ stage:
     sync: []  # No automatic sync for staging
 ```
 
-### `.tokens.yaml` — Authentication (gitignored)
+### Passman — Authentication
 
-```yaml
-# .tokens.yaml (DO NOT COMMIT)
-hosts:
-  company:
-    token: <PAT_TOKEN>
-  stage:
-    token: <PAT_TOKEN>
-```
+Jira PATs are stored as protected `token` custom fields in Passman entries named
+`jira-<host>` (for example, `jira-acme`). Open Passman, unlock the vault,
+and enable **Accessible for agents** before running an online Jira command. The
+CLI imports Passman’s `openVault`/`readFields` library interface and talks to
+its local agent socket; it does not read a KDBX file or handle a master
+password. If an online command's applicable host entry has no token, the CLI
+prompts through hidden stdin input and saves the supplied token as a protected
+field before continuing.
 
 ### Project Structure
 
 ```
 jira/
 ├── config.yaml            # Host definitions + sync patterns (committed)
-├── .tokens.yaml           # API tokens (gitignored)
-├── .tokens.yaml.example   # Token file template
+├── .tokens.yaml.example   # Legacy authentication guidance (no secrets)
 ├── package.json           # Project config
 ├── README.md              # User documentation
 ├── SKILL.md               # AI agent documentation
@@ -800,6 +801,6 @@ Brief user-facing documentation:
 
 Well-commented `.example` files serve as schema documentation:
 - `config.yaml.example` — host configuration schema
-- `.tokens.yaml.example` — authentication setup
+- `.tokens.yaml.example` — legacy authentication guidance (Passman is authoritative)
 - `batch.yaml.example` — batch ticket creation schema
 - `storage/ticket.md.example` — ticket storage format
